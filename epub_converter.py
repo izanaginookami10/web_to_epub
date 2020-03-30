@@ -1,58 +1,63 @@
-import requests
+from bs4 import BeautifulSoup
 import os
 import zipfile
-from bs4 import BeautifulSoup
-import functions as f 
-    
-starting_chapter = input('From which chapter start the download? ')
-ending_chapter = input('Until which chapter? ')
-#to get triggers for starting and ending the download loop
+import re
+import functions as f
+import requests
+import sys
 
-link_list = [] #will store chapters link that will undergo a loop 
+toc_link = 'https://www.royalroad.com/fiction/21220/mother-of-learning' #input('Toc link? ')
 
-#for Wuxiaworld and many websites, chapters link are the toc base link +
-#the chapter number, thus the example follows a wuxiaworld site
+parser = f.parser_choice()
+
+toc_html = 'toc.html'
+f.download(toc_link, toc_html)
+info = f.get_metadata_rr(toc_html)
+
+flag = input('Do you want to choose a specific range of chapters? y/n'
+    '\nIf "n" is chosen (written), then the whole available Toc will be '
+    'downloaded and converted to Epub \n')
+
+flag = f.check_error_yn(flag)
+
+link_list = []
+
+chapter_start = ''
+chapter_end = ''
+
+chapter_start_end = f.get_link_list(toc_html, link_list, flag, 
+    chapter_start, chapter_end, parser)
+#fill link_list and get chapter_start and chapter_end
 
 
-base_link = ('https://www.wuxiaworld.com/novel/the-second-coming-of-gluttony/scog-chapter-')
-chapters = 'scog-chapter-'
-novel = "Second Coming of GLuttony"
-author = "Ro Yu-jin"
-
-info = {
-    'base_link': base_link, #base link from which download all chapters
-    'chapters': chapters, #base xhtml file name for each chapter of the epub
-    'novel_name': novel, #name of epub file
-    'author': author, #name of author, meta data
-    }
-
-for s in range(int(starting_chapter), int(ending_chapter) + 1):
-#range(x,y) includes x but not y, thus the +1 at the end
-    link_list.append(info['base_link'] + str(s))
-#add to the link list a link made up from toc base link + chapter number
-name_counter = int(starting_chapter)
-
-file_list = []
+chapter_start = chapter_start_end[0]
+chapter_end = chapter_start_end[1]
+name_counter = 1
+cleaned_html_files = []
 
 for x in range(len(link_list)):
     f.download(link_list[x], str(x) + '.html')
-    f.clean(str(x) + '.html', info['chapters'] + str(name_counter) + '.xhtml')
-    file_list.append(info["chapters"] + str(name_counter) + ".xhtml")
+    #download all files from link_list
+    f.clean(str(x) + '.html', 'clean-' + info['chapter_file_names'] + 
+        str(name_counter) + '.xhtml', parser)
+    #clean all downloaded flies
+    cleaned_html_files.append('clean-' + info["chapter_file_names"] + 
+        str(name_counter) + ".xhtml")
+    #add them to cleaned_html_files list
+    print('Chapter ' + str(name_counter) + ' processed...')
     name_counter += 1
-    #for each item in the list, starting from the first to the last, download
-    #the associated webpage to a html file named with the chapter number only
-    #ie 'x.html', such file will then be used in clean(), which will delete the
-    #old file 'x.html' and make a new ver 'scog-chapter-number.xhtml'
+
+title_list = f.get_title_list(cleaned_html_files)
+
+if chapter_start != '':
+    chapter_s = chapter_start
+    chapter_e = chapter_end
+elif chapter_start == '':
+    chapter_s = f.get_chapter_s_e(title_list)[0]
+    chapter_e = f.get_chapter_s_e(title_list)[1]
+
     
-f.generate(file_list, info["novel_name"], info["author"], starting_chapter, 
-    ending_chapter)
+f.generate(cleaned_html_files, info["novel_name"], info["author"], chapter_s, 
+    chapter_e)
+    #generate epub using cleaned files and making the necessary files
 
-print('finished')
-'''
-
-raw = open('1.html', encoding = 'utf8')
-soup = BeautifulSoup(raw, 'html.parser')
-soup = soup.find(id = 'chapter-content')
-text = soup.text
-print(text)
-'''
