@@ -39,11 +39,13 @@ name_counter = 1
 cleaned_html_files = []
 
 for x in range(len(link_list)):
-    f.download(link_list[x], str(x) + '.html')
-    #download all files from link_list
-    f.clean(str(x) + '.html', 'clean-' + info['chapter_file_names'] + 
-        str(name_counter) + '.xhtml', parser)
-    #clean all downloaded flies
+    if not os.path.exists('clean-' + info["chapter_file_names"] + 
+        str(name_counter) + ".xhtml"):
+        f.download(link_list[x], str(x) + '.html')
+        #download all files from link_list
+        f.clean(str(x) + '.html', 'clean-' + info['chapter_file_names'] + 
+            str(name_counter) + '.xhtml', parser)
+        #clean all downloaded flies
     cleaned_html_files.append('clean-' + info["chapter_file_names"] + 
         str(name_counter) + ".xhtml")
     #add them to cleaned_html_files list

@@ -153,9 +153,10 @@ def get_chapter_s_e(title_list):
     for c in title_list[0]:
         if c.isdigit():
             chapter_s += c
-            if len(chapter_s) == 1:
-                break
-    if chapter_s == '' or chapter_s != '1':
+    if len(chapter_s) > 1:
+        if '1' in chapter_s:
+            chapter_s = '1'
+    if chapter_s == '':
         chapter_s = '0'
     chapter_s = chapter_s.strip()
 
