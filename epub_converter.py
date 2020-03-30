@@ -5,8 +5,11 @@ import re
 import functions as f
 import requests
 import sys
+import time
 
-toc_link = 'https://www.royalroad.com/fiction/21220/mother-of-learning' #input('Toc link? ')
+start_time = time.time()
+
+toc_link = input('Toc link? ')
 
 parser = f.parser_choice()
 
@@ -61,3 +64,5 @@ f.generate(cleaned_html_files, info["novel_name"], info["author"], chapter_s,
     chapter_e)
     #generate epub using cleaned files and making the necessary files
 
+elapsed_time = time.time() - start_time
+print('It took ' + str(elapsed_time) + 'seconds.')
