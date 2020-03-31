@@ -7,7 +7,7 @@ import requests
 import sys
 import time
 
-start_time = time.time()
+
 
 toc_link = input('Toc link? ')
 
@@ -31,27 +31,32 @@ chapter_end = ''
 chapter_start_end = f.get_link_list(toc_html, link_list, flag, 
     chapter_start, chapter_end, parser)
 #fill link_list and get chapter_start and chapter_end
-
+start_time = time.time()
 
 chapter_start = chapter_start_end[0]
 chapter_end = chapter_start_end[1]
-name_counter = 1
+if chapter_start != '':
+    name_counter = int(chapter_start)
+elif chapter_start == '':
+    name_counter = 1
 cleaned_html_files = []
 
 for x in range(len(link_list)):
     if not os.path.exists('clean-' + info["chapter_file_names"] + 
         str(name_counter) + ".xhtml"):
-        f.download(link_list[x], str(x) + '.html')
+        f.download(link_list[x], 'raw-' + info['chapter_file_names'] + 
+            str(name_counter) + '.html')
         #download all files from link_list
-        f.clean(str(x) + '.html', 'clean-' + info['chapter_file_names'] + 
-            str(name_counter) + '.xhtml', parser)
+        f.clean('raw-' + info['chapter_file_names'] + str(name_counter) 
+            + '.html', 'clean-' + info['chapter_file_names'] + 
+            str(name_counter) + '.xhtml', parser, info)
         #clean all downloaded flies
     cleaned_html_files.append('clean-' + info["chapter_file_names"] + 
         str(name_counter) + ".xhtml")
     #add them to cleaned_html_files list
     print('Chapter ' + str(name_counter) + ' processed...')
     name_counter += 1
-
+    
 title_list = f.get_title_list(cleaned_html_files)
 
 if chapter_start != '':
@@ -67,4 +72,4 @@ f.generate(cleaned_html_files, info["novel_name"], info["author"], chapter_s,
     #generate epub using cleaned files and making the necessary files
 
 elapsed_time = time.time() - start_time
-print('It took ' + str(elapsed_time) + 'seconds.')
+print('Time taken to finish: ' + str(elapsed_time) + ' seconds.')
