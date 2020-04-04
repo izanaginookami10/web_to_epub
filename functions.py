@@ -22,10 +22,12 @@ def download(link, file_name):
     
 def get_link_list(toc_html, link_list, flag, chapter_start, chapter_end, 
     parser):
-    '''given a RoyalRoad toc_link, fill the link_list with its chapters link
+    '''given a RoyalRoad toc, fill the link_list with its chapters link
     and return chapter_start and chapter_end for later use'''
     if parser == 'RoyalRoad':
-        soup = find_toc_rr(toc_html)
+        toc = get_toc_rr(toc_html)
+    elif parser == 'WuxiaWorld':
+        toc = get_toc_ww(toc_html)
         
     if flag.lower() == 'y':
         chapter_start = input('From which chapter do you want to start? ')
@@ -33,18 +35,20 @@ def get_link_list(toc_html, link_list, flag, chapter_start, chapter_end,
         chapter_start_end = check_error_number(chapter_start, chapter_end)
         chapter_start = chapter_start_end[0]
         chapter_end = chapter_start_end[1]
-        if (len(soup) - (int(chapter_end)-int(chapter_start)))<1:
+        #need to have a list containing the chapter start and end values 
+        #instead of directly returning them separatedly because it would 
+        #start the check_error_number twice and thus request the input twice
+        if (len(toc) - (int(chapter_end)-int(chapter_start)))<1:
             print('Chapters range not available. Retry with another one.')
             sys.exit()
         try:
             for c in range(int(chapter_start)-1, int(chapter_end)):
-                link_list.append(soup[c]['href'])
+                link_list.append(toc[c]['href'])
         except:
             print('Chapters range not available. Retry with another one.')
             sys.exit()
     elif flag.lower() == 'n':
-        
-        for a in soup:
+        for a in toc:
             link_list.append(a['href'])
     
     os.remove(toc_html)
@@ -58,24 +62,34 @@ def clean(file_name_in, file_name_out, parser, info):
     if parser == 'RoyalRoad':
         p_list = find_chapter_content_rr(file_name_in, info)[0]
         chapter_title = find_chapter_content_rr(file_name_in, info)[1]
-    '''
     elif parser == 'WuxiaWorld':
         p_list = find_chapter_content_ww(file_name_in)[0]
         chapter_title = find_chapter_content_ww(file_name_in)[1]  
-    '''
+    
     txt = ''
     for p in p_list:
-        txt += p.text + '\n'
+        t = p.text
+        if '-em-' in p.text:
+            t = t.replace('-em-', '<em>').replace('-/em-', '</em>')
+        elif '-i-' in p.text:
+            t = t.replace('-i-', '<i>').replace('-/i-', '</i>')
+        elif '-b-' in p.text:
+            t = t.replace('-b-', '<b>').replace('-/b-', '</b>')
+        elif '-strong-' in p.text:
+            t = t.replace('-strong-', '<strong>').replace('-/strong-', 
+                '</strong>')
+        txt += t + '\n' 
+
     #as the html chapter doesn't have line break in its code, we can't
     #convert all the chapter-content to text immediately because we would
     #get a wall of text without returns after periods. Thus we first create
     #a variable to hold the text, then, for each p tag that represents a 
     #line of the chapter we convert it to a string which we add to the 
     #text variable with a '\n', ie return to have a properly formatted chpt
+    #the if sequence is to keep italic or bold formatting
     txt = txt.replace('Previous Chapter', '').replace('Next Chapter', '')
-    #now only unnecessary words remain like prev and next chapters, 
-    #which can be replaced with ''
-    txt = txt.lstrip().rstrip()
+    #in case there are unnecessary prev and next chapters
+    txt = txt.strip()
     #delete any excessive whitespace just to be safe
     txt = txt.replace('\n', '</p>\n<p>')
     #as we have to make an epub and thus use html format, after we've 
@@ -254,6 +268,8 @@ def generate(cleaned_html_files, novel_name, author, chapter_s, chapter_e):
 #PARSER
 
 def parser_choice():
+    '''Will question a parser and return it'''
+    #need to make it automatic by checking the toc_link
     parser = ''
     sites = '''
     1.WuxiaWorld
@@ -277,15 +293,16 @@ def parser_choice():
         sys.exit()
     return parser
     
-def find_toc_rr(toc_html):
+#royalroad.com
+def get_toc_rr(toc_html):
     with open(toc_html, 'r', encoding = 'utf8') as raw:
         soup = BeautifulSoup(raw, 'html.parser')
         soup = soup.find(id = 'chapters')
-        soup = soup.find_all(href=re.compile('chapter'))
-        #soup is now a list of a tags
-        for a in soup:
+        toc = soup.find_all(href=re.compile('chapter'))
+        #toc is now a list of a tags
+        for a in toc:
             a['href'] = 'https://www.royalroad.com' + a['href']
-        return soup
+        return toc
 
 def get_metadata_rr(toc_html):
     '''given the toc.html file, it returns a info dict on novel name, 
@@ -315,28 +332,9 @@ def get_metadata_rr(toc_html):
     }
     return info
 
-
-def find_chapter_content_ww(file_name_in):
-    '''given a raw wuxiaworld html file, returns soup of its chapter content
-    and its title'''
-    raw = open(file_name_in, 'r', encoding='utf8')
-    soup = BeautifulSoup(raw, 'html.parser')
-    #create bs obj based on raw html in order to use the bs functions
-    #manually search for where in the html is the chapter text contained
-    #for tscog it is in <div id="chapter-content" class="fr-view">
-    chapter_title = soup.find('title')
-    chapter_title = chapter_title.text.split('-')[1].lstrip().rstrip()
-    #we store chapter title in the var. the title is in the title tag, we
-    #take out the SCOG and Wuxiaworld text after converting the tag to txt
-    soup = soup.find(id='chapter-content')
-    #now our soup, ie html editable obj through bs4, is only the tag with
-    #'chapter-content' and its children, I think
-    raw.close()
-    return soup, chapter_title
-    
 def find_chapter_content_rr(file_name_in, info):
-    '''given a raw royalroad html file, returns soup of its chapter content 
-    and its title'''
+    '''given a raw royalroad html chapter, returns list of its chapter content 
+    p tags and its title'''
     raw = open(file_name_in, 'r', encoding='utf8')
     soup = BeautifulSoup(raw, 'html.parser')
     chapter_title = soup.title.get_text(strip=True)
@@ -347,7 +345,6 @@ def find_chapter_content_rr(file_name_in, info):
     chapter_title = chapter_title.strip()
 
     chapter = soup.find(class_='chapter-content')
-    soup = []
     p_list = chapter.find_all('p')
     for p in p_list.copy():
         x = ''
@@ -360,7 +357,68 @@ def find_chapter_content_rr(file_name_in, info):
     raw.close()
     return p_list, chapter_title
 
+#wuxiaworld.com
+def get_toc_ww(toc_html):
+    '''given a toc_html, return a list of a tags (chapters), ie the toc'''
+    raw = open(toc_html, 'r', encoding='utf8')
+    soup = BeautifulSoup(raw, 'html.parser')
+    chapters = soup.find_all(class_="chapter-item")
+    toc = [chapter.a for chapter in chapters]
+    for a in toc:
+        a['href'] = 'https://www.wuxiaworld.com' + a['href']
+    return toc
 
+def get_metadata_ww(toc_html):
+    raw = open(toc_html, 'r', encoding='utf8')
+    soup = BeautifulSoup(raw, 'html.parser')
+    metadata = soup.find('div', class_= 'novel-body')
+    author = metadata.find('dt', string = 'Author:')
+    author = author.next_sibling.next_sibling.get_text(strip=True)
+    #twice next_sibling because between the tags there a '\n' which is the true
+    #first next_sibling of <dt>Author:</dt>. Can check with
+    #for string in metadata.strings:
+    #   print(repr(string))
+    translator = metadata.find('dt', string = 'Translator:')
+    translator = translator.next_sibling.next_sibling.get_text(strip=True)
+
+    author = 'Author: ' + author + ', Translator: ' + translator.strip()
+    novel_name = metadata.h2.get_text(strip=True)
+    raw_novel_name = novel_name
+    novel_name = delete_forbidden_c(forbidden_filenames, novel_name)
+    chapter_file_names = novel_name.lower().replace(' ', '-') + '-chapter-'
+    info = {
+    'chapter_file_names': chapter_file_names, #base xhtml file name for each chapter of the epub
+    'novel_name': novel_name, #name of epub file
+    'author': author, #name of author, meta data
+    'raw_novel_name': raw_novel_name,
+    }
+    return info
+
+def find_chapter_content_ww(file_name_in):
+    '''given a raw wuxiaworld html chapter, returns list of its chapter
+    content p tags and its title'''
+    raw = open(file_name_in, 'r', encoding='utf8')
+    soup = BeautifulSoup(raw, 'html.parser')
+    chapter_title = soup.title.get_text(strip=True)
+    chapter_title = chapter_title.split('-')
+    del chapter_title[0]
+    del chapter_title[-1]
+    chapter_title = '-'.join(chapter_title)
+    chapter_title = chapter_title.strip()
+
+    chapter = soup.find(id='chapter-content')
+    p_list = chapter.find_all('p')
+    for p in p_list[:10]:
+        p_text = p.get_text(strip=True).lower()
+        p_text = re.sub('[._-]', '', p_text)
+        p_text = set(p_text.split())
+        title = re.sub('[._-]', '', chapter_title.lower())
+        title = set(title.split())
+        if title.issubset(p_text) or p_text.issubset(title):
+            p_list.remove(p)
+  
+    return p_list, chapter_title
+    
 
 #MISCELLANEOUS
 
@@ -385,7 +443,6 @@ def check_error_number(chapter_start, chapter_end):
         #checking their combination is enough as digit+digit=digit
         if (str(chapter_start).strip() + str(chapter_end).strip()).isdigit():
             error = False
-            print(chapter_start, chapter_end)
         else:
             chapter_start = input('Start from? ')
             chapter_end = input('End at? ')

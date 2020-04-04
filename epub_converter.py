@@ -15,7 +15,13 @@ parser = f.parser_choice()
 
 toc_html = 'toc.html'
 f.download(toc_link, toc_html)
-info = f.get_metadata_rr(toc_html)
+if parser == 'WuxiaWorld':
+    info = f.get_metadata_ww(toc_html)
+elif parser == 'RoyalRoad':
+    info = f.get_metadata_rr(toc_html)
+else:
+    print('Chosen parser not yet available.')
+    sys.exit()
 
 flag = input('Do you want to choose a specific range of chapters? y/n'
     '\nIf "n" is chosen (written), then the whole available Toc will be '
