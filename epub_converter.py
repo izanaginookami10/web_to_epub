@@ -7,33 +7,20 @@ import requests
 import sys
 import time
 
-
-
 toc_link = input('Toc link? ')
-
-parser = f.parser_choice()
-
+parser = f.parser_choice(toc_link)
 toc_html = 'toc.html'
 f.download(toc_link, toc_html)
-if parser == 'WuxiaWorld':
-    info = f.get_metadata_ww(toc_html)
-elif parser == 'RoyalRoad':
-    info = f.get_metadata_rr(toc_html)
-else:
-    print('Chosen parser not yet available.')
-    sys.exit()
+info = f.get_info(parser, toc_html)
 
-flag = input('Do you want to choose a specific range of chapters? y/n'
+flag = input('\nDo you want to choose a specific range of chapters? y/n'
     '\nIf "n" is chosen (written), then the whole available Toc will be '
     'downloaded and converted to Epub \n')
-
 flag = f.check_error_yn(flag)
 
 link_list = []
-
 chapter_start = ''
 chapter_end = ''
-
 chapter_start_end = f.get_link_list(toc_html, link_list, flag, 
     chapter_start, chapter_end, parser)
 #fill link_list and get chapter_start and chapter_end
@@ -68,6 +55,9 @@ title_list = f.get_title_list(cleaned_html_files)
 if chapter_start != '':
     chapter_s = chapter_start
     chapter_e = chapter_end
+#^this makes even 'prologue', 'epilogue', 'afterwords'chapters into numbers
+#when naming the epub (not in the epub itself), need to integrate the 
+#mechanics of get_chapter_s_e() with the above code
 elif chapter_start == '':
     chapter_s = f.get_chapter_s_e(title_list)[0]
     chapter_e = f.get_chapter_s_e(title_list)[1]

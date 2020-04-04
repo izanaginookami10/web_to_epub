@@ -24,9 +24,9 @@ def get_link_list(toc_html, link_list, flag, chapter_start, chapter_end,
     parser):
     '''given a RoyalRoad toc, fill the link_list with its chapters link
     and return chapter_start and chapter_end for later use'''
-    if parser == 'RoyalRoad':
+    if parser == 'www.royalroad.com':
         toc = get_toc_rr(toc_html)
-    elif parser == 'WuxiaWorld':
+    elif parser == 'www.wuxiaworld.com':
         toc = get_toc_ww(toc_html)
         
     if flag.lower() == 'y':
@@ -59,10 +59,10 @@ def get_link_list(toc_html, link_list, flag, chapter_start, chapter_end,
 def clean(file_name_in, file_name_out, parser, info):
     '''takes html file from download function and give as output a cleaned
     version of it'''
-    if parser == 'RoyalRoad':
+    if parser == 'www.royalroad.com':
         p_list = find_chapter_content_rr(file_name_in, info)[0]
         chapter_title = find_chapter_content_rr(file_name_in, info)[1]
-    elif parser == 'WuxiaWorld':
+    elif parser == 'www.wuxiaworld.com':
         p_list = find_chapter_content_ww(file_name_in)[0]
         chapter_title = find_chapter_content_ww(file_name_in)[1]  
     
@@ -267,31 +267,28 @@ def generate(cleaned_html_files, novel_name, author, chapter_s, chapter_e):
 
 #PARSER
 
-def parser_choice():
+def parser_choice(toc_link):
     '''Will question a parser and return it'''
     #need to make it automatic by checking the toc_link
-    parser = ''
-    sites = '''
-    1.WuxiaWorld
-    2.RoyalRoad
-    '''
-    parser_choice = input('Which site? Input a digit.'
-        '\n' + sites + '\nMore sites might be added in the future.\n')
-    error = True
-    while error or len(parser_choice.strip())>1:
-        if (str(parser_choice)).isdigit():
-            error = False
-        else:
-            parser_choice = input('Please only input a digit corresponding'
-                ' the site.' + sites + '\n')
-    if int(parser_choice) == 1:
-        parser = 'WuxiaWorld'
-    elif int(parser_choice) == 2:
-        parser = 'RoyalRoad'
-    if parser == '':
-        print('Input an available digit.')
-        sys.exit()
+    parsers = ['www.wuxiaworld.com', 'www.royalroad.com']
+    for site in parsers:
+        if site in toc_link:
+            parser = site
+            break
+        if all(site not in toc_link for site in parsers):
+            print('Site not yet compatible')
+            sys.exit()
     return parser
+
+def get_info(parser, toc_html):
+    if parser == 'www.wuxiaworld.com':
+        info = get_metadata_ww(toc_html)
+    elif parser == 'www.royalroad.com':
+        info = get_metadata_rr(toc_html)
+    else:
+        print('Site not yet compatible.')
+        sys.exit()
+    return info
     
 #royalroad.com
 def get_toc_rr(toc_html):
@@ -338,8 +335,6 @@ def find_chapter_content_rr(file_name_in, info):
     raw = open(file_name_in, 'r', encoding='utf8')
     soup = BeautifulSoup(raw, 'html.parser')
     chapter_title = soup.title.get_text(strip=True)
-    if 'chapter' not in chapter_title.lower():
-        chapter_title = 'Chapter ' + chapter_title
     chapter_title = chapter_title.replace('-', '').replace(info['raw_novel'
         '_name'], '').replace('| Royal Road', '')
     chapter_title = chapter_title.strip()
@@ -352,7 +347,7 @@ def find_chapter_content_rr(file_name_in, info):
         p_text = p_text.replace('.', x).replace('-', x).replace(' ', x)
         title = (chapter_title.lower().replace('.', x).replace('-', x)
             .replace(' ', x))
-        if title in p_text or p_text in title or 'chapter' in p_text:
+        if title in p_text or p_text in title:
             p_list.remove(p)
     raw.close()
     return p_list, chapter_title
