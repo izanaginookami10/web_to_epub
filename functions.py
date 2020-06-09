@@ -264,7 +264,40 @@ def generate(cleaned_html_files, novel_name, author, chapter_s, chapter_e):
         '\nFinished')
 
 
-
+#quick(*cough*) code I did to get a chapter on Yoraikun's wordpress site. Might 
+#be of use for WP parser
+#forgot to add code to exclude the "share this post" div, which can be found
+#with the id="jp-post-flair"
+'''
+link = "https://yoraikun.wordpress.com/2017/09/08/about-the-reckless-girl-who-kept-challenging-a-reborn-man-like-me/"
+file_name = "About the Reckless Girl who kept Challenging a Reborn Man like Me.html"
+download(link, file_name)
+with open(file_name, 'r', encoding='utf8') as html:
+    soup = BeautifulSoup(html, 'html.parser')
+title = soup.find(class_="entry-title")
+title = title.get_text(strip=True)
+content = soup.find(class_="entry-content")
+clean_html = 'clean.html'
+with open(clean_html, 'w', encoding='utf8') as file:
+    file.write('<html xmlns="http://www.w3.org/1999/xhtml">')
+    #epub files by convetion use the xhtml format
+    file.write('\n<head>')
+    file.write('\n<title>' + title + '</title>')
+    file.write('\n</head>')
+    #after the xhtml attribute statement, we put the title, then the body
+    file.write('\n<body>')
+    file.write('\n<h4><b>' + title + '</b></h4>\n')
+    file.write(str(content))
+    #we then insert the title and the chapter text with additional p tags
+    file.write('\n</body>')
+    file.write('\n</html>')
+novel_name = "About the Reckless Girl who kept Challenging a Reborn Man like Me"
+author = "Kohigashi Nora"
+chapter_s = "oneshot"
+chapter_e = ""
+clean_html = ['clean.html']
+generate(clean_html, novel_name, author, chapter_s, chapter_e)
+'''
 #PARSER
 
 def parser_choice(toc_link):

@@ -7,6 +7,12 @@ import requests
 import sys
 import time
 
+#THINGS TO DO
+#MAKE LINK LIST EDITABLE AFTER GETTING IT
+#ADD IMAGES
+#BETTER FORMAT IT
+
+
 toc_link = input('Toc link? ')
 parser = f.parser_choice(toc_link)
 toc_html = 'toc.html'
@@ -55,7 +61,7 @@ title_list = f.get_title_list(cleaned_html_files)
 if chapter_start != '':
     chapter_s = chapter_start
     chapter_e = chapter_end
-#^this makes even 'prologue', 'epilogue', 'afterwords'chapters into numbers
+#^this makes even 'prologue', 'epilogue', 'afterwords' chapters into numbers
 #when naming the epub (not in the epub itself), need to integrate the 
 #mechanics of get_chapter_s_e() with the above code
 elif chapter_start == '':
