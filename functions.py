@@ -1,4 +1,8 @@
 import requests
+import cloudscraper
+#due to ww denying requests with cloudflare. need to use cloudscraper
+#as it works like requests and anti bot measures will most likely be present
+#in the future in other websites as well, cloudscraper will be used 
 import os
 import zipfile
 import re
@@ -10,15 +14,16 @@ forbidden_filenames = ['/', '\\', ':', '*', '?', '"', '<', '>', '|']
 #CORE
 
 def download(link, file_name):
-    '''get content from provided link to a file, ie download a webpage''' 
-    page = requests.get(link).text 
-        #get content from linked page and store it as text in var page
-    file = open(file_name, "w", encoding = "utf8")
-        #create a file in write mode
-    file.write(page)
+    '''get content from provided link to a html file, ie download a webpage''' 
+    s = cloudscraper.create_scraper()
+    #using cloudscraper to bypass cloudflare bot check
+    page = s.get(link).text 
+    #get content from linked page and store it as text in var page
+    with open(file_name, "w", encoding = "utf8") as html:
+    #create a file in write mode, it will be a html one
+        html.write(page)
         #write the content of var page onto the just created/opened file
-    file.close()
-    #get content from provided link to a file, ie download a webpage'
+    
     
 def get_link_list(toc_html, link_list, flag, chapter_start, chapter_end, 
     parser):
@@ -32,17 +37,27 @@ def get_link_list(toc_html, link_list, flag, chapter_start, chapter_end,
     if flag.lower() == 'y':
         chapter_start = input('From which chapter do you want to start? ')
         chapter_end = input('Until which chapter? ')
-        chapter_start_end = check_error_number(chapter_start, chapter_end)
-        chapter_start = chapter_start_end[0]
-        chapter_end = chapter_start_end[1]
-        #need to have a list containing the chapter start and end values 
-        #instead of directly returning them separatedly because it would 
-        #start the check_error_number twice and thus request the input twice
+        chapter_start, chapter_end = check_error_number(chapter_start, 
+            chapter_end)
+        #past newbie me made a list to get 2 values from function, just return
+        #2 values. Oh, past silly me.
         if (len(toc) - (int(chapter_end)-int(chapter_start)))<1:
             print('Chapters range not available. Retry with another one.')
             sys.exit()
         try:
+            if int(chapter_start) == 0:
+                chapter_start = '1'
+                #temporarily fallback: in case the user want to start from 0
+                #(if the series start with that), ie beginning, there shouldn't
+                #be errors now
             for c in range(int(chapter_start)-1, int(chapter_end)):
+                #range doesn't include the 2nd arg, but since c is going to be
+                #the list index, which starts from 0 and thus is one digit behind
+                #than the usual counting, it's correct (unless there is a 
+                #chapter named 0 and user choose that one... 
+                #need to implement some fallback code as well as the possibility
+                #to put only one of the start or end and without the other, either
+                #start from first available chapter or until the last
                 link_list.append(toc[c]['href'])
         except:
             print('Chapters range not available. Retry with another one.')
@@ -52,13 +67,14 @@ def get_link_list(toc_html, link_list, flag, chapter_start, chapter_end,
             link_list.append(a['href'])
     
     os.remove(toc_html)
-    
-    chapter_start_end = [chapter_start, chapter_end]
-    return chapter_start_end
+
+    return chapter_start, chapter_end #maybe I should make them glob vars...
     
 def clean(file_name_in, file_name_out, parser, info):
     '''takes html file from download function and give as output a cleaned
     version of it'''
+    #according to parser, the chapter content, ie 'p_list' and its title are
+    #located differently in the html page
     if parser == 'www.royalroad.com':
         p_list = find_chapter_content_rr(file_name_in, info)[0]
         chapter_title = find_chapter_content_rr(file_name_in, info)[1]
@@ -67,6 +83,8 @@ def clean(file_name_in, file_name_out, parser, info):
         chapter_title = find_chapter_content_ww(file_name_in)[1]  
     
     txt = ''
+    #in order to try to keep the original chapter formatting as much as possible,
+    #the tags were substitute with -tag- and are now returned as tags
     for p in p_list:
         t = p.text
         if '-em-' in p.text:
@@ -119,8 +137,8 @@ def clean(file_name_in, file_name_out, parser, info):
     #version of it
 
 def find_between(file):
-    f = open(file, 'r', encoding='utf8')
-    soup = BeautifulSoup(f, 'html.parser')
+    with open(file, 'r', encoding='utf8') as f:
+        soup = BeautifulSoup(f, 'html.parser')
     return soup.title.get_text(strip=True)
     #return the text of the title tag of a html file
 
@@ -132,11 +150,10 @@ def get_title_list(cleaned_html_files):
             title_list.append(soup.title.get_text(strip=True))
     return title_list
 
-def generate(cleaned_html_files, novel_name, author, chapter_s, chapter_e):
+def generate(cleaned_html_files, novel_name, author, epub_name):
     #chapter_s and _e are starting and ending chapters
     print('Creating Epub file (0/4)...')
-    epub = zipfile.ZipFile(novel_name + ' ' + chapter_s + '-' + chapter_e +
-        '.epub', 'w')
+    epub = zipfile.ZipFile(epub_name, 'w')
     #create empty zip archive, as epub are essentially zip files
     
     epub.writestr('mimetype', 'application/epub+zip')
@@ -173,7 +190,12 @@ def generate(cleaned_html_files, novel_name, author, chapter_s, chapter_e):
             %(spine)s
         </spine>
     </package>'''
-        
+    #keeping the "old school" f-strings istead of f'string' here because %(var)s
+    #allows me to define the var later, which I can't seem to do with f'string'
+    #it can obviously be easily fixed by changing the orders of the elements and
+    #variables, but as I do not have deep knowledge about epubs, better to keep
+    #the structure clear 
+    
     #we need to fill %(metadata)s, %(manifest)s and %(spine)s
     #manifest and spine will be filled through a loop, so let's make empty 
     #vars to hold their contents
@@ -181,15 +203,13 @@ def generate(cleaned_html_files, novel_name, author, chapter_s, chapter_e):
     spine = ''
     
     #metadata is the same but with few var data such as novelname and author
-    metadata = ('<dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">'
-        '%(novelname)s</dc:title>'
-        '\n<dc:creator xmlns:dc="http://purl.org/dc/elements/1.1/" '
-        'xmlns:ns0="http://www.idpf.org/2007/opf" ns0:role="aut" '
-        'ns0:file-as="NaN">%(author)s</dc:creator>'
-        '\n<meta xmlns:dc="http://purl.org/dc/elements/1.1/" '
-        'name="calibre:series" content="%(series)s"/>'
-        % {"novelname": novel_name + ": " + chapter_s + "-" + chapter_e, 
-            "author": author, "series": novel_name})
+    metadata = f'''<dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">
+        {epub_name}</dc:title>'
+        <dc:creator xmlns:dc="http://purl.org/dc/elements/1.1/" 
+        xmlns:ns0="http://www.idpf.org/2007/opf" ns0:role="aut" 
+        ns0:file-as="NaN">{author}</dc:creator>
+        <meta xmlns:dc="http://purl.org/dc/elements/1.1/" 
+        name="calibre:series" content="{novel_name}"/>'''
     
     #standard string at end of manafest string
     toc_manifest = ('<item href="toc.xhtml" id="toc" '
@@ -201,9 +221,9 @@ def generate(cleaned_html_files, novel_name, author, chapter_s, chapter_e):
         basename = os.path.basename(html)
         #os.path.basename(path) return name of last path, ie
         #"python_work\Epub Converter\epub_converter.py" -> "epub_converter.py"
-        manifest +=('<item id="file_%s" href="%s" '
-            'media-type="application/xhtml+xml"/>' % (n + 1, basename))
-        spine += '<itemref idref = "file_%s" />' % (n + 1)
+        manifest +=(f'<item id="file_{str(n+1)}" href="{basename}" '
+            'media-type="application/xhtml+xml"/>')
+        spine += f'<itemref idref = "file_{str(n+1)}" />' 
         epub.write(html, "OEBPS/" + basename)
         #zipfile.write(file, filename) is different from .writestr(filename,
         #content): the former write an existing file to the zipfile with
@@ -217,6 +237,9 @@ def generate(cleaned_html_files, novel_name, author, chapter_s, chapter_e):
         "metadata": metadata,
         "manifest": manifest + toc_manifest,
         "spine": spine, })
+        #write first 'OPEBPS...' and then the index_tpl, substituting the
+        #placeholder variables in the %()s with their filled counterparts
+        
     print('Creating Epub file (3/4)...'
         '\ncontent.opf created')
         
@@ -239,14 +262,15 @@ def generate(cleaned_html_files, novel_name, author, chapter_s, chapter_e):
             <ol>
                 %(toc_mid)s
                 %(toc_end)s''')
+    #using %()s here for same reason as before: it allows me to define vars later
+    
     toc_mid = ""
     toc_end = '''</ol></nav></section></body></html>'''
     for n, f in enumerate(cleaned_html_files):
         chapter = find_between(cleaned_html_files[n])
         chapter = str(chapter)
-        toc_mid += '''<li class="toc-Chapter-rw" id="num_%s">
-            <a href="%s">%s</a>
-            </li>''' % (n, cleaned_html_files[n], chapter)
+        toc_mid += f'''<li class="toc-Chapter-rw" id="num_{n}">
+            <a href="{cleaned_html_files[n]}">{chapter}</a></li>''' 
     #for each file in the list 'html_files', find the respective title tag and
     #add to toc_mid the string while substituting the variable values
     
@@ -254,6 +278,7 @@ def generate(cleaned_html_files, novel_name, author, chapter_s, chapter_e):
     #and delete the downloaded and cleaned html files now unnecessary
     epub.writestr("OEBPS/toc.xhtml", toc_start % {"novelname": novel_name,
         "toc_mid": toc_mid, "toc_end": toc_end})
+        #write OEB... and the toc filled with the variables
     print('Creating Epub file (4/4)...'
         '\ntoc.xhtml created')
     
@@ -309,7 +334,7 @@ def parser_choice(toc_link):
             parser = site
             break
         if all(site not in toc_link for site in parsers):
-            print('Site not yet compatible')
+            print('Site not yet compatible.')
             sys.exit()
     return parser
 
@@ -400,6 +425,7 @@ def get_metadata_ww(toc_html):
     raw = open(toc_html, 'r', encoding='utf8')
     soup = BeautifulSoup(raw, 'html.parser')
     metadata = soup.find('div', class_= 'novel-body')
+    #now ww won't allow requests from bots, need to implement cookies usage 
     author = metadata.find('dt', string = 'Author:')
     author = author.next_sibling.next_sibling.get_text(strip=True)
     #twice next_sibling because between the tags there a '\n' which is the true
@@ -472,15 +498,13 @@ def check_error_number(chapter_start, chapter_end):
         if (str(chapter_start).strip() + str(chapter_end).strip()).isdigit():
             error = False
         else:
+            print('Please write digits only.')
             chapter_start = input('Start from? ')
             chapter_end = input('End at? ')
-    chapter_start_end = [chapter_start.strip(), chapter_end.strip()]
-    return chapter_start_end
+    return chapter_start, chapter_end
 
 def get_chapter_s_e(title_list):
     '''define and return starting chapter and ending chapter of epub'''
-    #plan to make it so that instead of the whole toc you can choose from and 
-    #to which chapter download for the epub
     chapter_s = ''
     for c in title_list[0]:
         if c.isdigit():
