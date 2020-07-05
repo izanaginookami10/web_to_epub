@@ -5,7 +5,7 @@ I've added an exe file, so you can try the script by using the .exe file. Just d
 
 Ignore the "dist" folder. I'm dumb and can't understand how to delete that folder. I know I need to use the terminal, but will look up how to do it later.
 
-Or, you could also execute the 'epub_converter.py' file from the cmd using Python ie writing "python epub_converter.py", you will need to install the necessary modules though. You can also do that with the CMD: "pip install [module name]". (You will be notified of the lacking modules by the script itself)
+Or, you could also execute the 'epub_converter.py' file from the cmd using Python ie writing "python epub_converter.py", you will need to install the necessary modules though. You can also do that with the CMD: "pip install [module name]" (You will be notified of the lacking modules by the script itself). Naturally, you need the "functions.py" file in the same directory as "epub_converter.py" for it to work properly.
 
 As of now, you should only be able to safely(?) download novels from RoyalRoad and WuxiaWorld.
 
