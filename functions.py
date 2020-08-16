@@ -11,13 +11,28 @@ from bs4 import BeautifulSoup
 
 forbidden_filenames = ['/', '\\', ':', '*', '?', '"', '<', '>', '|']
 
+#PARSERS
+ww = 'www.wuxiaworld.com'
+rr = 'www.royalroad.com'
+wp = 'wordpress'
+bs = 'blogspot'
+parsers = [ww, rr, wp, bs]
+wp_sites = ['isekailunatic.com', 'defiring.com', 'shirusekai.com']
+bs_sites = ['skythewood']
+
 #CORE
 
 def download(link, file_name):
     '''get content from provided link to a html file, ie download a webpage''' 
     s = cloudscraper.create_scraper()
     #using cloudscraper to bypass cloudflare bot check
-    page = s.get(link).text 
+    
+    ua_edge = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.125 Safari/537.36 Edg/84.0.522.59')
+    headers = {'User-Agent': ua_edge,
+    }
+    #setting user agent as PC Edge browser to avoid getting low image res
+    
+    page = s.get(link, headers=headers).text 
     #get content from linked page and store it as text in var page
     with open(file_name, "w", encoding = "utf8") as html:
     #create a file in write mode, it will be a html one
@@ -33,6 +48,8 @@ def get_link_list(toc_html, link_list, flag, chapter_start, chapter_end,
         toc = get_toc_rr(toc_html)
     elif parser == 'www.wuxiaworld.com':
         toc = get_toc_ww(toc_html)
+    elif parser == 'wordpress':
+        toc = get_toc_wp(toc_html)
         
     if flag.lower() == 'y':
         chapter_start = input('From which chapter do you want to start? ')
@@ -41,7 +58,8 @@ def get_link_list(toc_html, link_list, flag, chapter_start, chapter_end,
             chapter_end)
         #past newbie me made a list to get 2 values from function, just return
         #2 values. Oh, past silly me.
-        if (len(toc) - (int(chapter_end)-int(chapter_start)))<1:
+        if (not chapter_start or not chapter_end or
+            (len(toc) - (int(chapter_end)-int(chapter_start)))<1):
             print('Chapters range not available. Retry with another one.')
             sys.exit()
         try:
@@ -65,39 +83,27 @@ def get_link_list(toc_html, link_list, flag, chapter_start, chapter_end,
     elif flag.lower() == 'n':
         for a in toc:
             link_list.append(a['href'])
-    
-    os.remove(toc_html)
-
+            
+ 
     return chapter_start, chapter_end #maybe I should make them glob vars...
     
 def clean(file_name_in, file_name_out, parser, info):
     '''takes html file from download function and give as output a cleaned
     version of it'''
-    #according to parser, the chapter content, ie 'p_list' and its title are
-    #located differently in the html page
-    if parser == 'www.royalroad.com':
-        p_list = find_chapter_content_rr(file_name_in, info)[0]
-        chapter_title = find_chapter_content_rr(file_name_in, info)[1]
-    elif parser == 'www.wuxiaworld.com':
-        p_list = find_chapter_content_ww(file_name_in)[0]
-        chapter_title = find_chapter_content_ww(file_name_in)[1]  
-    
-    txt = ''
+    chapter, chapter_title = get_chapter_content(file_name_in, info, parser)
+        
     #in order to try to keep the original chapter formatting as much as possible,
-    #the tags were substitute with -tag- and are now returned as tags
-    for p in p_list:
-        t = p.text
-        if '-em-' in p.text:
-            t = t.replace('-em-', '<em>').replace('-/em-', '</em>')
-        elif '-i-' in p.text:
-            t = t.replace('-i-', '<i>').replace('-/i-', '</i>')
-        elif '-b-' in p.text:
-            t = t.replace('-b-', '<b>').replace('-/b-', '</b>')
-        elif '-strong-' in p.text:
-            t = t.replace('-strong-', '<strong>').replace('-/strong-', 
-                '</strong>')
-        txt += t + '\n' 
-
+    #the tags were substituted with -tag- and are now returned as tags
+    if '-em-' in chapter:
+        chapter = chapter.replace('-em-', '<em>').replace('-/em-', '</em>')
+    if '-i-' in chapter:
+        chapter = chapter.replace('-i-', '<i>').replace('-/i-', '</i>')
+    if '-b-' in chapter:
+        chapter = chapter.replace('-b-', '<b>').replace('-/b-', '</b>')
+    if '-strong-' in chapter:
+        chapter = chapter.replace('-strong-', '<strong>').replace('-/strong-', 
+            '</strong>')
+    
     #as the html chapter doesn't have line break in its code, we can't
     #convert all the chapter-content to text immediately because we would
     #get a wall of text without returns after periods. Thus we first create
@@ -105,11 +111,11 @@ def clean(file_name_in, file_name_out, parser, info):
     #line of the chapter we convert it to a string which we add to the 
     #text variable with a '\n', ie return to have a properly formatted chpt
     #the if sequence is to keep italic or bold formatting
-    txt = txt.replace('Previous Chapter', '').replace('Next Chapter', '')
+    chapter = chapter.replace('Previous Chapter', '').replace('Next Chapter', '')
     #in case there are unnecessary prev and next chapters
-    txt = txt.strip()
+    chapter = chapter.strip()
     #delete any excessive whitespace just to be safe
-    txt = txt.replace('\n', '</p>\n<p>')
+    chapter = chapter.replace('\n', '</p>\n\n<p>')
     #as we have to make an epub and thus use html format, after we've 
     #cleaned the chapter from all the useless stuff and tags, we put each
     #line within <p> tags by replacing each '\n' with a closing and opening
@@ -126,7 +132,7 @@ def clean(file_name_in, file_name_out, parser, info):
     #after the xhtml attribute statement, we put the title, then the body
     file.write('\n<body>')
     file.write('\n<h4><b>' + chapter_title + '</b></h4>')
-    file.write('\n<p>' + txt + '</p>')
+    file.write('\n<p>' + chapter + '</p>')
     #we then insert the title and the chapter text with additional p tags
     file.write('\n</body>')
     file.write('\n</html>')
@@ -152,12 +158,15 @@ def get_title_list(cleaned_html_files):
 
 def generate(cleaned_html_files, novel_name, author, epub_name):
     #chapter_s and _e are starting and ending chapters
+    epub_name = delete_forbidden_c(forbidden_filenames, epub_name)
+    #delete any unallowed characters in epub filename
+    
     print('Creating Epub file (0/4)...')
     epub = zipfile.ZipFile(epub_name, 'w')
     #create empty zip archive, as epub are essentially zip files
     
     epub.writestr('mimetype', 'application/epub+zip')
-    #zipfile.writestr('namefile', 'txt') 
+    #zipfile.writestr('namefile', 'chapter') 
     #create in epub a file named 'mimetype' which contain the string
     #application/epub+zip'. This file is the same for all epub files
     print('Creating Epub file (1/4)...'
@@ -216,6 +225,13 @@ def generate(cleaned_html_files, novel_name, author, epub_name):
         'properties="nav" media-type="application/xhtml+xml"/>')
     
     for n, html in enumerate(cleaned_html_files):
+        #to add images, I would need to add their items in the loop for the 
+        #manifest and then add the image files to the OEBPS folder or a subfolder
+        #<item id="cover_jpg" properties="cover-image" href="images/cover.jpg" media-type="image/jpeg" />
+        #^manifest line, no properties if it's a non-cover image
+        #probably will work on cleaned_html_files rather than the generate()
+        #in order to already have all the correct files to generate the epub
+        
         #enumerate(list) gives a tuple for each item in a list containing 
         #a number starting from 0 and the corresponding item ie (0, item0)
         basename = os.path.basename(html)
@@ -289,64 +305,105 @@ def generate(cleaned_html_files, novel_name, author, epub_name):
         '\nFinished')
 
 
-#quick(*cough*) code I did to get a chapter on Yoraikun's wordpress site. Might 
-#be of use for WP parser
-#forgot to add code to exclude the "share this post" div, which can be found
-#with the id="jp-post-flair"
-'''
-link = "https://yoraikun.wordpress.com/2017/09/08/about-the-reckless-girl-who-kept-challenging-a-reborn-man-like-me/"
-file_name = "About the Reckless Girl who kept Challenging a Reborn Man like Me.html"
-download(link, file_name)
-with open(file_name, 'r', encoding='utf8') as html:
-    soup = BeautifulSoup(html, 'html.parser')
-title = soup.find(class_="entry-title")
-title = title.get_text(strip=True)
-content = soup.find(class_="entry-content")
-clean_html = 'clean.html'
-with open(clean_html, 'w', encoding='utf8') as file:
-    file.write('<html xmlns="http://www.w3.org/1999/xhtml">')
-    #epub files by convetion use the xhtml format
-    file.write('\n<head>')
-    file.write('\n<title>' + title + '</title>')
-    file.write('\n</head>')
-    #after the xhtml attribute statement, we put the title, then the body
-    file.write('\n<body>')
-    file.write('\n<h4><b>' + title + '</b></h4>\n')
-    file.write(str(content))
-    #we then insert the title and the chapter text with additional p tags
-    file.write('\n</body>')
-    file.write('\n</html>')
-novel_name = "About the Reckless Girl who kept Challenging a Reborn Man like Me"
-author = "Kohigashi Nora"
-chapter_s = "oneshot"
-chapter_e = ""
-clean_html = ['clean.html']
-generate(clean_html, novel_name, author, chapter_s, chapter_e)
-'''
 #PARSER
 
 def parser_choice(toc_link):
-    '''Will question a parser and return it'''
-    #need to make it automatic by checking the toc_link
-    parsers = ['www.wuxiaworld.com', 'www.royalroad.com']
+    '''Will choose the parser by checking the toc_link'''
+    parser_check = False
     for site in parsers:
         if site in toc_link:
             parser = site
+            parser_check = True
             break
-        if all(site not in toc_link for site in parsers):
-            print('Site not yet compatible.')
-            sys.exit()
+    if not parser_check:
+        for site in wp_sites:
+            if site in toc_link:
+                parser = wp
+                parser_check = True
+                break
+    if not parser_check:
+        print('Site not yet compatible.')
+        sys.exit()
     return parser
 
 def get_info(parser, toc_html):
-    if parser == 'www.wuxiaworld.com':
+    if parser == ww:
         info = get_metadata_ww(toc_html)
-    elif parser == 'www.royalroad.com':
+    elif parser == rr:
         info = get_metadata_rr(toc_html)
+    elif parser == wp:
+        info = get_metadata_wp(toc_html)
+    elif parser == bs:
+        info = get_metadata_bs(toc_html)
     else:
         print('Site not yet compatible.')
         sys.exit()
     return info
+
+def get_chapter_content(file_name_in, info, parser):
+    if parser == rr:
+        chapter, chapter_title = find_chapter_content_rr(file_name_in, info)
+    elif parser == ww:
+        chapter, chapter_title = find_chapter_content_ww(file_name_in)
+    elif parser == wp:
+        chapter, chapter_title = find_chapter_content_wp(file_name_in)
+    elif parser == bs:
+        chapter, chapter_title = find_chapter_content_bs(file_name_in)
+
+    imgs, chapter = get_imgs(chapter) 
+    #get img filenames, download them and mark the tags in the html file
+    
+    tags = ['em', 'i', 'b', 'strong']
+    #to keep as much formatting as possible, will insert tags markers
+    #in order to restore them later
+    chapter = str(chapter) 
+    #BeautifulSoup.tag obj -> str object in order to use str.replace
+    for tag in tags:
+        otag = '<' + tag 
+        ctag = '</' + tag
+        mtag = '-' + tag + '-' #tag marker
+        cmtag = '-/' + tag + '-' #closing tag marker
+        if tag in chapter:
+            chapter = chapter.replace(otag+'>', otag+'>'+mtag)
+            #<tag> -> <tag>-tag-
+            chapter = chapter.replace(ctag, cmtag+ctag)
+            #</tag -> -/tag-</tag
+    #img tags were marked with get_imgs() through tag.wrap(new_tag)
+    
+    chapter = BeautifulSoup(chapter, 'html.parser')
+    #str obj -> BeautifulSoup obj again
+    chapter = chapter.text
+
+    return chapter, chapter_title
+
+def get_imgs(chapter):
+    '''return images filenames list, download them and mark the tags'''
+    imgs = []
+    
+    chapter = str(chapter)
+    chapter = BeautifulSoup(chapter, 'html.parser')
+    #necessary to convert chapter from bs4.element.Tag to 
+    #bs4.BeautifulSoup obj in order to add new p tag
+    
+    for img in chapter.findAll('img'): #find all img tags
+        src = img['src'] #their source link/url
+        if '?' in src: 
+            #if they have '?' parts for different res, filter them out
+            src = src.split('?', 1) #split with max 2 elements
+            src = src[0] #keep only first part of url
+        
+        #download imgs
+        i = requests.get(src).content #get img content
+        filename = src.split('/')[-1] #get img filename 
+        with open(filename, 'wb') as image:
+            image.write(i) #download img 
+        imgs.append(filename) #append img name to images list
+        
+        #wrap the img tags in chapter html with p tag to mark them 
+        p = chapter.new_tag('p')
+        p.string = '-img- ' + filename + ' -/img-'
+        img.wrap(p)
+    return imgs, chapter
     
 #royalroad.com
 def get_toc_rr(toc_html):
@@ -390,8 +447,8 @@ def get_metadata_rr(toc_html):
 def find_chapter_content_rr(file_name_in, info):
     '''given a raw royalroad html chapter, returns list of its chapter content 
     p tags and its title'''
-    raw = open(file_name_in, 'r', encoding='utf8')
-    soup = BeautifulSoup(raw, 'html.parser')
+    with open(file_name_in, 'r', encoding='utf8') as raw:
+        soup = BeautifulSoup(raw, 'html.parser')
     chapter_title = soup.title.get_text(strip=True)
     chapter_title = chapter_title.replace('-', '').replace(info['raw_novel'
         '_name'], '').replace('| Royal Road', '')
@@ -407,23 +464,23 @@ def find_chapter_content_rr(file_name_in, info):
             .replace(' ', x))
         if title in p_text or p_text in title:
             p_list.remove(p)
-    raw.close()
-    return p_list, chapter_title
+
+    return chapter, chapter_title
 
 #wuxiaworld.com
-def get_toc_ww(toc_html):
+def get_toc_ww(file_name_in):
     '''given a toc_html, return a list of a tags (chapters), ie the toc'''
-    raw = open(toc_html, 'r', encoding='utf8')
-    soup = BeautifulSoup(raw, 'html.parser')
+    with open(file_name_in, 'r', encoding='utf8') as raw:
+        soup = BeautifulSoup(raw, 'html.parser')
     chapters = soup.find_all(class_="chapter-item")
     toc = [chapter.a for chapter in chapters]
     for a in toc:
         a['href'] = 'https://www.wuxiaworld.com' + a['href']
     return toc
 
-def get_metadata_ww(toc_html):
-    raw = open(toc_html, 'r', encoding='utf8')
-    soup = BeautifulSoup(raw, 'html.parser')
+def get_metadata_ww(file_name_in):
+    with open(file_name_in, 'r', encoding='utf8') as raw:
+        soup = BeautifulSoup(raw, 'html.parser')
     metadata = soup.find('div', class_= 'novel-body')
     #now ww won't allow requests from bots, need to implement cookies usage 
     author = metadata.find('dt', string = 'Author:')
@@ -451,8 +508,8 @@ def get_metadata_ww(toc_html):
 def find_chapter_content_ww(file_name_in):
     '''given a raw wuxiaworld html chapter, returns list of its chapter
     content p tags and its title'''
-    raw = open(file_name_in, 'r', encoding='utf8')
-    soup = BeautifulSoup(raw, 'html.parser')
+    with open(file_name_in, 'r', encoding='utf8') as raw:
+        soup = BeautifulSoup(raw, 'html.parser')
     chapter_title = soup.title.get_text(strip=True)
     chapter_title = chapter_title.split('-')
     del chapter_title[0]
@@ -471,11 +528,93 @@ def find_chapter_content_ww(file_name_in):
         if title.issubset(p_text) or p_text.issubset(title):
             p_list.remove(p)
   
-    return p_list, chapter_title
+    return chapter, chapter_title
+
+#wordpress
+def get_toc_wp(file_name_in):
+    '''given a toc_html, return a list of a tags (chapters), ie the toc'''
+    with open(file_name_in, 'r', encoding='utf8') as raw:
+        soup = BeautifulSoup(raw, 'html.parser')
+    chapters = soup.find(class_="entry-content")
+    share = chapters.find(id="jp-post-flair")
+    share.decompose()
+    chapters = chapters.findAll('a')
+    toc = []
+    for c in chapters:
+    #    if 'wordpress' in c['href']:
+        toc.append(c)
+    #won't work for wp sites that have bougth a custom domain
+    #need to use either "wordpress" or the site name
+    return toc
+
+def get_metadata_wp(file_name_in):
+    with open(file_name_in, 'r', encoding='utf8') as raw:
+        soup = BeautifulSoup(raw, 'html.parser')
+    title = soup.title.string
+    info = {
+    'chapter_file_names': '',
+    'novel_name': title,
+    'author': '',
+    'raw_novel_name': '',
+    }
+    return info
+
+def find_chapter_content_wp(file_name_in):
+    '''given a raw wordpress html chapter, returns its content
+    content p tags and its title'''
+    with open(file_name_in, 'r', encoding='utf8') as raw:
+        soup = BeautifulSoup(raw, 'html.parser')
+        
+    chapter_title = soup.find(class_="entry-title")
+    chapter_title = chapter_title.get_text(strip=True)
+    chapter = soup.find(class_="entry-content")
+    share = chapter.find(id="jp-post-flair")
+    share.decompose()
+    #remove "share this post" part
+    p_list = chapter.find_all('p')
+      
+    return chapter, chapter_title
+
+#blogspot
+def get_toc_bs(file_name_in):
+    '''given a toc_html, return a list of a tags (chapters), ie the toc'''
+    with open(file_name_in, 'r', encoding='utf8') as raw:
+        soup = BeautifulSoup(raw, 'html.parser')
+    chapters = soup.find(class_="entry-content")
+    chapters = chapters.findAll('a')
+    toc = []
+    for c in chapters:
+        toc.append(c)
+
+    return toc
+
+def get_metadata_bs(file_name_in):
+    with open(file_name_in, 'r', encoding='utf8') as raw:
+        soup = BeautifulSoup(raw, 'html.parser')
+    title = soup.title.string
+    info = {
+    'chapter_file_names': '',
+    'novel_name': title,
+    'author': '',
+    'raw_novel_name': '',
+    }
+    return info
+
+def find_chapter_content_bs(file_name_in):
+    '''given a raw blogspot html chapter, returns its content
+    content p tags and its title'''
+    with open(file_name_in, 'r', encoding='utf8') as raw:
+        soup = BeautifulSoup(raw, 'html.parser')
+        
+    chapter_title = soup.find(class_="entry-title")
+    chapter_title = chapter_title.get_text(strip=True)
+    chapter = soup.find(class_="entry-content")
+
+    #remove "share this post" part
     
+    return chapter, chapter_title
 
-#MISCELLANEOUS
-
+#MISCELLANEOUS    
 def check_error_yn(flag):
     '''check that the flag has y or n as answer and returns it'''
     error_flag = True
@@ -495,7 +634,8 @@ def check_error_number(chapter_start, chapter_end):
     while error:
         #.isdigit() works only on string, to check if both input are digits, 
         #checking their combination is enough as digit+digit=digit
-        if (str(chapter_start).strip() + str(chapter_end).strip()).isdigit():
+        if ((str(chapter_start).strip() + str(chapter_end).strip()).isdigit()
+            and chapter_start and chapter_end): #cannot be ""
             error = False
         else:
             print('Please write digits only.')
