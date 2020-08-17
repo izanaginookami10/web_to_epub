@@ -10,6 +10,8 @@ import sys
 from bs4 import BeautifulSoup
 
 forbidden_filenames = ['/', '\\', ':', '*', '?', '"', '<', '>', '|']
+not_chapter_links = ['.jpg', '.jpeg', '.png', '.gif', 'amazon.com', 
+    'amazon.jp', 'amazon.uk', '.ico', '.jp']
 
 #PARSERS
 ww = 'www.wuxiaworld.com'
@@ -85,7 +87,11 @@ def get_link_list(toc_html, link_list, flag, chapter_start, chapter_end,
     elif flag.lower() == 'n':
         for a in toc:
             link_list.append(a['href'])
-            
+    
+    for link in link_list.copy():
+        for i in not_chapter_links:
+            if i in link:
+                link_list.remove(link)
  
     return chapter_start, chapter_end #maybe I should make them glob vars...
     
