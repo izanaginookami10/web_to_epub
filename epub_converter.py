@@ -42,6 +42,7 @@ f.download(toc_link, toc_html)
 
 info = f.get_info(parser, toc_html)
 
+imgs = []
 link_list = []
 chapter_start = ''
 chapter_end = ''
@@ -114,17 +115,27 @@ for x in range(len(link_list)):
         #download all files from link_list
         f.clean('raw-' + info['chapter_file_names'] + str(name_counter) 
             + '.html', 'clean-' + info['chapter_file_names'] + 
-            str(name_counter) + '.xhtml', parser, info)
+            str(name_counter) + '.xhtml', parser, info, imgs)
         #clean all downloaded flies
-    cleaned_html_files.append('clean-' + info["chapter_file_names"] + 
-        str(name_counter) + ".xhtml")
-    #add them to cleaned_html_files list
-    print('Chapter ' + str(name_counter) + ' processed...')
+        
+    print('Chapter ' + str(name_counter) + ' of ' + str(len(link_list)) + 
+        ' processed...')
     name_counter += 1
-    
+
+#due to f.clean() making multiple xhtml files if there are imgs, can't
+#include the append in the loop as it's based on the link_list length
+files = os.listdir() #make list of all files and paths in working folder
+cleaned_html_files = [i for i in files if i.startswith('clean') and 
+    i.endswith('.xhtml')]
+#narrow files list to only the cleaned chapters
+
 title_list = f.get_title_list(cleaned_html_files)
 #get chapters individual titles
-
+if one:
+    title_list = [title_list[0]] 
+    #when there is an image, multiple title are outputted even though
+    #it's just one page, so this is to correct it
+    
 if chapter_start != '':
     chapter_s = chapter_start
     chapter_e = chapter_end
@@ -136,12 +147,17 @@ elif chapter_start == '':
 
 
 novel_name = info['novel_name']
+
 if finished_flag:
     epub_name = novel_name + '.epub'
 else:
-    epub_name = novel_name + ' ' + chapter_s + '-' + chapter_e + '.epub'
+    latter = '-' + chapter_e
+    if one:
+        latter = ''
+    epub_name = novel_name + ' ' + chapter_s + latter + '.epub'
 
-f.generate(cleaned_html_files, info["novel_name"], info["author"], epub_name)
+f.generate(cleaned_html_files, info["novel_name"], info["author"], 
+    epub_name, imgs)
     #generate epub using cleaned files and making the necessary files
 
 elapsed_time = time.time() - start_time

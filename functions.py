@@ -50,6 +50,8 @@ def get_link_list(toc_html, link_list, flag, chapter_start, chapter_end,
         toc = get_toc_ww(toc_html)
     elif parser == 'wordpress':
         toc = get_toc_wp(toc_html)
+    elif parser == bs:
+        toc = get_toc_bs(toc_html)
         
     if flag.lower() == 'y':
         chapter_start = input('From which chapter do you want to start? ')
@@ -87,10 +89,11 @@ def get_link_list(toc_html, link_list, flag, chapter_start, chapter_end,
  
     return chapter_start, chapter_end #maybe I should make them glob vars...
     
-def clean(file_name_in, file_name_out, parser, info):
+def clean(file_name_in, file_name_out, parser, info, imgs):
     '''takes html file from download function and give as output a cleaned
     version of it'''
-    chapter, chapter_title = get_chapter_content(file_name_in, info, parser)
+    chapter, chapter_title = get_chapter_content(file_name_in, info, 
+        parser, imgs)
         
     #in order to try to keep the original chapter formatting as much as possible,
     #the tags were substituted with -tag- and are now returned as tags
@@ -104,15 +107,18 @@ def clean(file_name_in, file_name_out, parser, info):
         chapter = chapter.replace('-strong-', '<strong>').replace('-/strong-', 
             '</strong>')
     
-    #as the html chapter doesn't have line break in its code, we can't
-    #convert all the chapter-content to text immediately because we would
-    #get a wall of text without returns after periods. Thus we first create
-    #a variable to hold the text, then, for each p tag that represents a 
-    #line of the chapter we convert it to a string which we add to the 
-    #text variable with a '\n', ie return to have a properly formatted chpt
+    #b4s' tag.text keeps '\n', so no need for a p_list (check prev vers)
     #the if sequence is to keep italic or bold formatting
-    chapter = chapter.replace('Previous Chapter', '').replace('Next Chapter', '')
-    #in case there are unnecessary prev and next chapters
+    chapter = chapter.strip().split('\n')
+    nav = ['Previous Chapter', 'Next Chapter', '|', 'Main Page', 'Toc',
+        'Table of Content']
+    last_line = chapter[-1]
+    for i in nav:
+        if i in last_line:
+            last_line = last_line.replace(i, '')    
+    chapter[-1] = last_line
+    chapter = '\n'.join(chapter)
+    #in case there are unnecessary prev, next chapters
     chapter = chapter.strip()
     #delete any excessive whitespace just to be safe
     chapter = chapter.replace('\n', '</p>\n\n<p>')
@@ -121,26 +127,134 @@ def clean(file_name_in, file_name_out, parser, info):
     #line within <p> tags by replacing each '\n' with a closing and opening
     #<p> tag, this will leave a missing opening tag at the beginning and a
     #closing tag at the end 
-   
-    #we start working on file_name_out
-    file = open(file_name_out, 'w', encoding = 'utf8')
-    file.write('<html xmlns="http://www.w3.org/1999/xhtml">')
-    #epub files by convetion use the xhtml format
-    file.write('\n<head>')
-    file.write('\n<title>' + chapter_title + '</title>')
-    file.write('\n</head>')
-    #after the xhtml attribute statement, we put the title, then the body
-    file.write('\n<body>')
-    file.write('\n<h4><b>' + chapter_title + '</b></h4>')
-    file.write('\n<p>' + chapter + '</p>')
-    #we then insert the title and the chapter text with additional p tags
-    file.write('\n</body>')
-    file.write('\n</html>')
-    file.close()
-    #closed all tags and file, now we delete the file_name_in
+    
+    img_tag = '-img-'
+    if img_tag in chapter:
+        chapter = chapter.replace('-img-', '<img src="').replace('-/img-',
+            '">')
+        parts = re.split('(<img.+>)', chapter.strip())
+        og_filename_out = file_name_out
+        og_chapter_title = chapter_title
+        for part in parts:
+            counter = 1
+            img_counter = 1
+            img_name = ' - illustration ' + str(img_counter)
+            file_name_out = og_filename_out
+            chapter_title = og_chapter_title
+            #at next loops they would be edited by prev loops otherwise
+            file_name_out = file_name_out.split('.')
+            #parts with image will have "illustration (n)" while chapter
+            #text parts just a number after their filenames/titles
+            if '<img' in part:
+                file_name_out[0] += img_name
+            else:
+                file_name_out[0] += '-' + str(counter)
+            
+            file_name_out = '.'.join(file_name_out)
+            #edit file_name_out adding number for each part before the
+            #.xhtml part
+            
+            if '<img' in part:
+                chapter_title = chapter_title + img_name
+            else:
+                chapter_title = chapter_title + ' (' + str(counter) + ')'
+            chapter = part
+            
+            #<opf:item id="cover" href="cover.jpg" media-type="image/jpeg"/>
+            write_xhtml(file_name_out, chapter_title, chapter)
+            
+            if '<img' in part:
+                img_counter += 1
+            else:
+                counter += 1
+    else: 
+        write_xhtml(file_name_out, chapter_title, chapter)
+    
+    #closed all tags and file, now we delete the file_name_in, ie raws
     os.remove(file_name_in)
-    #takes html file from download function and give as output a cleaned
-    #version of it
+
+def write_xhtml(file_name_out, chapter_title, chapter):
+    '''write chapter to xhtml file'''
+    with open(file_name_out, 'w', encoding='utf8') as xhtml:
+        xhtml.write('<html xmlns="http://www.w3.org/1999/xhtml">')
+        #epub xhtmls by convetion use the xhtml format
+        xhtml.write('\n<head>')
+        xhtml.write('\n<title>' + chapter_title + '</title>')
+        xhtml.write('\n</head>')
+        #after the xhtml attribute statement, we put the title, then the body
+        xhtml.write('\n<body>')
+        if '<img' not in chapter:
+            xhtml.write('\n<h4><b>' + chapter_title + '</b></h4>')
+            #no need to have title written in illustration pages
+        xhtml.write('\n<p>' + chapter + '</p>')
+        #we then insert the title and the chapter text with additional p tags
+        xhtml.write('\n</body>')
+        xhtml.write('\n</html>')
+
+def get_chapter_content(file_name_in, info, parser, imgs):
+    if parser == rr:
+        chapter, chapter_title = find_chapter_content_rr(file_name_in, info)
+    elif parser == ww:
+        chapter, chapter_title = find_chapter_content_ww(file_name_in)
+    elif parser == wp:
+        chapter, chapter_title = find_chapter_content_wp(file_name_in)
+    elif parser == bs:
+        chapter, chapter_title = find_chapter_content_bs(file_name_in)
+
+    chapter = get_imgs(chapter, imgs) 
+    #get img filenames, download them and mark the tags in the html file
+    
+    tags = ['em', 'i', 'b', 'strong']
+    #to keep as much formatting as possible, will insert tags markers
+    #in order to restore them later
+    chapter = str(chapter) 
+    #BeautifulSoup.tag obj -> str object in order to use str.replace
+    for tag in tags:
+        otag = '<' + tag 
+        ctag = '</' + tag
+        mtag = '-' + tag + '-' #tag marker
+        cmtag = '-/' + tag + '-' #closing tag marker
+        if tag in chapter:
+            chapter = chapter.replace(otag+'>', otag+'>'+mtag)
+            #<tag> -> <tag>-tag-
+            chapter = chapter.replace(ctag, cmtag+ctag)
+            #</tag -> -/tag-</tag
+    #img tags were marked with get_imgs() through tag.wrap(new_tag)
+    
+    chapter = BeautifulSoup(chapter, 'html.parser')
+    #str obj -> BeautifulSoup obj again
+    chapter = chapter.text
+
+    return chapter, chapter_title
+
+def get_imgs(chapter, imgs):
+    '''append images filenames to given list (2nd arg), download them 
+    and mark their tags in the html files'''
+    
+    chapter = str(chapter)
+    chapter = BeautifulSoup(chapter, 'html.parser')
+    #necessary to convert chapter from bs4.element.Tag to 
+    #bs4.BeautifulSoup obj in order to add new p tag
+    
+    for img in chapter.findAll('img'): #find all img tags
+        src = img['src'] #their source link/url
+        if '?' in src: 
+            #if they have '?' parts for different res, filter them out
+            src = src.split('?', 1) #split with max 2 elements
+            src = src[0] #keep only first part of url
+        
+        #download imgs
+        i = requests.get(src).content #get img content
+        filename = src.split('/')[-1] #get img filename 
+        with open(filename, 'wb') as image:
+            image.write(i) #download img 
+        imgs.append(filename) #append img name to images list
+        
+        #wrap the img tags in chapter html with p tag to mark them 
+        p = chapter.new_tag('p')
+        p.string = '-img-' + filename + '-/img-'
+        img.wrap(p)
+    return chapter
 
 def find_between(file):
     with open(file, 'r', encoding='utf8') as f:
@@ -149,6 +263,7 @@ def find_between(file):
     #return the text of the title tag of a html file
 
 def get_title_list(cleaned_html_files):
+    
     title_list = []
     for f in cleaned_html_files:
         with open(f, 'r', encoding='utf8') as file:
@@ -156,7 +271,7 @@ def get_title_list(cleaned_html_files):
             title_list.append(soup.title.get_text(strip=True))
     return title_list
 
-def generate(cleaned_html_files, novel_name, author, epub_name):
+def generate(cleaned_html_files, novel_name, author, epub_name, imgs):
     #chapter_s and _e are starting and ending chapters
     epub_name = delete_forbidden_c(forbidden_filenames, epub_name)
     #delete any unallowed characters in epub filename
@@ -225,19 +340,12 @@ def generate(cleaned_html_files, novel_name, author, epub_name):
         'properties="nav" media-type="application/xhtml+xml"/>')
     
     for n, html in enumerate(cleaned_html_files):
-        #to add images, I would need to add their items in the loop for the 
-        #manifest and then add the image files to the OEBPS folder or a subfolder
-        #<item id="cover_jpg" properties="cover-image" href="images/cover.jpg" media-type="image/jpeg" />
-        #^manifest line, no properties if it's a non-cover image
-        #probably will work on cleaned_html_files rather than the generate()
-        #in order to already have all the correct files to generate the epub
-        
         #enumerate(list) gives a tuple for each item in a list containing 
         #a number starting from 0 and the corresponding item ie (0, item0)
         basename = os.path.basename(html)
         #os.path.basename(path) return name of last path, ie
         #"python_work\Epub Converter\epub_converter.py" -> "epub_converter.py"
-        manifest +=(f'<item id="file_{str(n+1)}" href="{basename}" '
+        manifest += (f'<item id="file_{str(n+1)}" href="{basename}" '
             'media-type="application/xhtml+xml"/>')
         spine += f'<itemref idref = "file_{str(n+1)}" />' 
         epub.write(html, "OEBPS/" + basename)
@@ -248,6 +356,20 @@ def generate(cleaned_html_files, novel_name, author, epub_name):
         #add cleaned chapter file (html) on the epub file in folder 'OEBPS' 
         #with 'basename' as filename
     
+    if imgs: #if the imgs list isn't empty
+        for img in imgs:
+            if 'cover_' in img:
+                cover = 'properties="cover-image"' #for cover image only
+            else:
+                cover = ''
+            
+            manifest += (f'<itemd id="{img}" {cover} href="{img}" '
+                'media-type="image/jpeg"')
+            #add images to manifest
+            epub.write(img, "OEBPS/" + img)
+            #write images files in epub file
+            os.remove(img)
+            #remove imgs from working folder
     #now we write the completed content.opf file onto the epub archive
     epub.writestr("OEBPS/Content.opf", index_tpl % {
         "metadata": metadata,
@@ -306,7 +428,6 @@ def generate(cleaned_html_files, novel_name, author, epub_name):
 
 
 #PARSER
-
 def parser_choice(toc_link):
     '''Will choose the parser by checking the toc_link'''
     parser_check = False
@@ -338,72 +459,12 @@ def get_info(parser, toc_html):
     else:
         print('Site not yet compatible.')
         sys.exit()
+    for k, v in info.items():
+        v = delete_forbidden_c(forbidden_filenames, v)
+        info[k] = v
+        
     return info
 
-def get_chapter_content(file_name_in, info, parser):
-    if parser == rr:
-        chapter, chapter_title = find_chapter_content_rr(file_name_in, info)
-    elif parser == ww:
-        chapter, chapter_title = find_chapter_content_ww(file_name_in)
-    elif parser == wp:
-        chapter, chapter_title = find_chapter_content_wp(file_name_in)
-    elif parser == bs:
-        chapter, chapter_title = find_chapter_content_bs(file_name_in)
-
-    imgs, chapter = get_imgs(chapter) 
-    #get img filenames, download them and mark the tags in the html file
-    
-    tags = ['em', 'i', 'b', 'strong']
-    #to keep as much formatting as possible, will insert tags markers
-    #in order to restore them later
-    chapter = str(chapter) 
-    #BeautifulSoup.tag obj -> str object in order to use str.replace
-    for tag in tags:
-        otag = '<' + tag 
-        ctag = '</' + tag
-        mtag = '-' + tag + '-' #tag marker
-        cmtag = '-/' + tag + '-' #closing tag marker
-        if tag in chapter:
-            chapter = chapter.replace(otag+'>', otag+'>'+mtag)
-            #<tag> -> <tag>-tag-
-            chapter = chapter.replace(ctag, cmtag+ctag)
-            #</tag -> -/tag-</tag
-    #img tags were marked with get_imgs() through tag.wrap(new_tag)
-    
-    chapter = BeautifulSoup(chapter, 'html.parser')
-    #str obj -> BeautifulSoup obj again
-    chapter = chapter.text
-
-    return chapter, chapter_title
-
-def get_imgs(chapter):
-    '''return images filenames list, download them and mark the tags'''
-    imgs = []
-    
-    chapter = str(chapter)
-    chapter = BeautifulSoup(chapter, 'html.parser')
-    #necessary to convert chapter from bs4.element.Tag to 
-    #bs4.BeautifulSoup obj in order to add new p tag
-    
-    for img in chapter.findAll('img'): #find all img tags
-        src = img['src'] #their source link/url
-        if '?' in src: 
-            #if they have '?' parts for different res, filter them out
-            src = src.split('?', 1) #split with max 2 elements
-            src = src[0] #keep only first part of url
-        
-        #download imgs
-        i = requests.get(src).content #get img content
-        filename = src.split('/')[-1] #get img filename 
-        with open(filename, 'wb') as image:
-            image.write(i) #download img 
-        imgs.append(filename) #append img name to images list
-        
-        #wrap the img tags in chapter html with p tag to mark them 
-        p = chapter.new_tag('p')
-        p.string = '-img- ' + filename + ' -/img-'
-        img.wrap(p)
-    return imgs, chapter
     
 #royalroad.com
 def get_toc_rr(toc_html):
@@ -550,9 +611,9 @@ def get_toc_wp(file_name_in):
 def get_metadata_wp(file_name_in):
     with open(file_name_in, 'r', encoding='utf8') as raw:
         soup = BeautifulSoup(raw, 'html.parser')
-    title = soup.title.string
+    title = soup.find(class_="entry-title").get_text(strip=True)
     info = {
-    'chapter_file_names': '',
+    'chapter_file_names': title,
     'novel_name': title,
     'author': '',
     'raw_novel_name': '',
@@ -591,9 +652,10 @@ def get_toc_bs(file_name_in):
 def get_metadata_bs(file_name_in):
     with open(file_name_in, 'r', encoding='utf8') as raw:
         soup = BeautifulSoup(raw, 'html.parser')
-    title = soup.title.string
+    title = soup.find(class_="entry-title").get_text(strip=True)
+    
     info = {
-    'chapter_file_names': '',
+    'chapter_file_names': title,
     'novel_name': title,
     'author': '',
     'raw_novel_name': '',
