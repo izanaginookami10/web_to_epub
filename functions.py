@@ -8,6 +8,7 @@ import zipfile
 import re
 import sys
 from bs4 import BeautifulSoup
+import bs4 #for the isinstance check
 
 forbidden_filenames = ['/', '\\', ':', '*', '?', '"', '<', '>', '|']
 not_chapter_links = ['.jpg', '.jpeg', '.png', '.gif', 'amazon.com', 
@@ -19,7 +20,8 @@ rr = 'www.royalroad.com'
 wp = 'wordpress'
 bs = 'blogspot'
 parsers = [ww, rr, wp, bs]
-wp_sites = ['isekailunatic.com', 'defiring.com', 'shirusekai.com']
+wp_sites = ['isekailunatic.com', 'defiring.com', 'shirusekai.com',
+    'rhextranslations.com']
 bs_sites = ['skythewood']
 
 #CORE
@@ -92,42 +94,62 @@ def get_link_list(toc_html, link_list, flag, chapter_start, chapter_end,
         for i in not_chapter_links:
             if i in link:
                 link_list.remove(link)
- 
+                break #if a link is removed due to having a match with a
+                #not_chapter_links items, mustn't continue searching for
+                #other matches with other items: another match would try
+                #to remove an already removed link
     return chapter_start, chapter_end #maybe I should make them glob vars...
     
 def clean(file_name_in, file_name_out, parser, info, imgs):
     '''takes html file from download function and give as output a cleaned
     version of it'''
+    
     chapter, chapter_title = get_chapter_content(file_name_in, info, 
         parser, imgs)
-        
+    
+    txt = ''
+    for t in chapter: #chapter is a list of bs4 obj (tag and navstrings)
     #in order to try to keep the original chapter formatting as much as possible,
     #the tags were substituted with -tag- and are now returned as tags
-    if '-em-' in chapter:
-        chapter = chapter.replace('-em-', '<em>').replace('-/em-', '</em>')
-    if '-i-' in chapter:
-        chapter = chapter.replace('-i-', '<i>').replace('-/i-', '</i>')
-    if '-b-' in chapter:
-        chapter = chapter.replace('-b-', '<b>').replace('-/b-', '</b>')
-    if '-strong-' in chapter:
-        chapter = chapter.replace('-strong-', '<strong>').replace('-/strong-', 
-            '</strong>')
-    
-    #b4s' tag.text keeps '\n', so no need for a p_list (check prev vers)
-    #the if sequence is to keep italic or bold formatting
-    chapter = chapter.strip().split('\n')
+        if isinstance(t, bs4.element.Tag): #navstring don't have get_text
+            t = t.get_text() 
+            #if strip=True, it will delete \xa0, which I don't want as I
+            #need to replace it with a normal space
+        if '\xa0' in t:
+            t = t.replace('\xa0', ' ') 
+            #ww had them instead of spaces after the dots, they are
+            #non-breaking space, in html it's "&nbsp", it becomes '\xa0'
+            #in unicode
+        if '-em-' in t:
+            t = t.replace('-em-', '<em>').replace('-/em-', '</em>')
+        if '-i-' in t:
+            t = t.replace('-i-', '<i>').replace('-/i-', '</i>')
+        if '-b-' in t:
+            t = t.replace('-b-', '<b>').replace('-/b-', '</b>')
+        if '-strong-' in t:
+            t = t.replace('-strong-', '<strong>').replace('-/strong-', 
+                '</strong>')
+        txt += t + '\n'
+    chapter = txt
+
+    chapter = chapter.strip().split('\n') #now a list of lines
+
     nav = ['Previous Chapter', 'Next Chapter', '|', 'Main Page', 'Toc',
         'Table of Content']
-    last_line = chapter[-1]
-    for i in nav:
-        if i in last_line:
-            last_line = last_line.replace(i, '')    
-    chapter[-1] = last_line
+    last_lines = 10
+    for n in range(last_lines):
+        n += 1 #range will go from 0 to 9
+        ll = chapter[-n] #each loop will go over line from the end
+        for i in nav:
+            if i.lower() in ll.lower():
+                chapter[-n] = chapter[-n].replace(i, '')    
+                #can't use ll because it won't edit the real list item 
+        
     chapter = '\n'.join(chapter)
-    #in case there are unnecessary prev, next chapters
+    #in case there are unnecessary prev, next chapters in last 3 lines
     chapter = chapter.strip()
     #delete any excessive whitespace just to be safe
-    chapter = chapter.replace('\n', '</p>\n\n<p>')
+    chapter = chapter.replace('\n', '</p>\n<p>')
     #as we have to make an epub and thus use html format, after we've 
     #cleaned the chapter from all the useless stuff and tags, we put each
     #line within <p> tags by replacing each '\n' with a closing and opening
@@ -138,43 +160,7 @@ def clean(file_name_in, file_name_out, parser, info, imgs):
     if img_tag in chapter:
         chapter = chapter.replace('-img-', '<img src="').replace('-/img-',
             '">')
-        parts = re.split('(<img.+>)', chapter.strip())
-        og_filename_out = file_name_out
-        og_chapter_title = chapter_title
-        for part in parts:
-            counter = 1
-            img_counter = 1
-            img_name = ' - illustration ' + str(img_counter)
-            file_name_out = og_filename_out
-            chapter_title = og_chapter_title
-            #at next loops they would be edited by prev loops otherwise
-            file_name_out = file_name_out.split('.')
-            #parts with image will have "illustration (n)" while chapter
-            #text parts just a number after their filenames/titles
-            if '<img' in part:
-                file_name_out[0] += img_name
-            else:
-                file_name_out[0] += '-' + str(counter)
-            
-            file_name_out = '.'.join(file_name_out)
-            #edit file_name_out adding number for each part before the
-            #.xhtml part
-            
-            if '<img' in part:
-                chapter_title = chapter_title + img_name
-            else:
-                chapter_title = chapter_title + ' (' + str(counter) + ')'
-            chapter = part
-            
-            #<opf:item id="cover" href="cover.jpg" media-type="image/jpeg"/>
-            write_xhtml(file_name_out, chapter_title, chapter)
-            
-            if '<img' in part:
-                img_counter += 1
-            else:
-                counter += 1
-    else: 
-        write_xhtml(file_name_out, chapter_title, chapter)
+    write_xhtml(file_name_out, chapter_title, chapter)
     
     #closed all tags and file, now we delete the file_name_in, ie raws
     os.remove(file_name_in)
@@ -206,8 +192,9 @@ def get_chapter_content(file_name_in, info, parser, imgs):
         chapter, chapter_title = find_chapter_content_wp(file_name_in)
     elif parser == bs:
         chapter, chapter_title = find_chapter_content_bs(file_name_in)
-
-    chapter = get_imgs(chapter, imgs) 
+    #chapter is the whole div/whatever tag the chapter content is in,
+    #necessary to have the "raw" chapter html for get_imgs()
+    #chapter = get_imgs(chapter, imgs) 
     #get img filenames, download them and mark the tags in the html file
     
     tags = ['em', 'i', 'b', 'strong']
@@ -229,7 +216,15 @@ def get_chapter_content(file_name_in, info, parser, imgs):
     
     chapter = BeautifulSoup(chapter, 'html.parser')
     #str obj -> BeautifulSoup obj again
-    chapter = chapter.text
+    chapter.div.unwrap() #due to making it a bs4 object in get_img, 
+    #contents will get also the outer chapter content div, so we delete it 
+    chapter = chapter.contents 
+    #attribute contents get whatever element once, full with eventual 
+    #children tags.
+    #findAll get redundant tags (parent and children separatedly, so 
+    #children show up multiple times). Can't use .text or .get_text() as it 
+    #doen't assure \n in the string, so it might result in a wall of text. 
+    
 
     return chapter, chapter_title
 
@@ -352,8 +347,8 @@ def generate(cleaned_html_files, novel_name, author, epub_name, imgs):
         #os.path.basename(path) return name of last path, ie
         #"python_work\Epub Converter\epub_converter.py" -> "epub_converter.py"
         manifest += (f'<item id="file_{str(n+1)}" href="{basename}" '
-            'media-type="application/xhtml+xml"/>')
-        spine += f'<itemref idref = "file_{str(n+1)}" />' 
+            'media-type="application/xhtml+xml"/>\n')
+        spine += f'<itemref idref = "file_{str(n+1)}" />\n' 
         epub.write(html, "OEBPS/" + basename)
         #zipfile.write(file, filename) is different from .writestr(filename,
         #content): the former write an existing file to the zipfile with
@@ -369,13 +364,14 @@ def generate(cleaned_html_files, novel_name, author, epub_name, imgs):
             else:
                 cover = ''
             
-            manifest += (f'<itemd id="{img}" {cover} href="{img}" '
-                'media-type="image/jpeg"')
-            #add images to manifest
+            manifest += (f'<item id="{img}" {cover} href="{img}" '
+                'media-type="image/jpeg"/>\n')
+            #add images to manifest 
             epub.write(img, "OEBPS/" + img)
             #write images files in epub file
             os.remove(img)
             #remove imgs from working folder
+            
     #now we write the completed content.opf file onto the epub archive
     epub.writestr("OEBPS/Content.opf", index_tpl % {
         "metadata": metadata,
@@ -522,15 +518,6 @@ def find_chapter_content_rr(file_name_in, info):
     chapter_title = chapter_title.strip()
 
     chapter = soup.find(class_='chapter-content')
-    p_list = chapter.find_all('p')
-    for p in p_list.copy():
-        x = ''
-        p_text = p.get_text(strip=True).lower()
-        p_text = p_text.replace('.', x).replace('-', x).replace(' ', x)
-        title = (chapter_title.lower().replace('.', x).replace('-', x)
-            .replace(' ', x))
-        if title in p_text or p_text in title:
-            p_list.remove(p)
 
     return chapter, chapter_title
 
@@ -585,16 +572,7 @@ def find_chapter_content_ww(file_name_in):
     chapter_title = chapter_title.strip()
 
     chapter = soup.find(id='chapter-content')
-    p_list = chapter.find_all('p')
-    for p in p_list[:10]:
-        p_text = p.get_text(strip=True).lower()
-        p_text = re.sub('[._-]', '', p_text)
-        p_text = set(p_text.split())
-        title = re.sub('[._-]', '', chapter_title.lower())
-        title = set(title.split())
-        if title.issubset(p_text) or p_text.issubset(title):
-            p_list.remove(p)
-  
+
     return chapter, chapter_title
 
 #wordpress
@@ -603,8 +581,10 @@ def get_toc_wp(file_name_in):
     with open(file_name_in, 'r', encoding='utf8') as raw:
         soup = BeautifulSoup(raw, 'html.parser')
     chapters = soup.find(class_="entry-content")
+    
     share = chapters.find(id="jp-post-flair")
-    share.decompose()
+    if share: #maybe wp authors won't make the post commentable
+        share.decompose()
     chapters = chapters.findAll('a')
     toc = []
     for c in chapters:
@@ -638,8 +618,7 @@ def find_chapter_content_wp(file_name_in):
     share = chapter.find(id="jp-post-flair")
     share.decompose()
     #remove "share this post" part
-    p_list = chapter.find_all('p')
-      
+
     return chapter, chapter_title
 
 #blogspot
@@ -677,7 +656,7 @@ def find_chapter_content_bs(file_name_in):
     chapter_title = soup.find(class_="entry-title")
     chapter_title = chapter_title.get_text(strip=True)
     chapter = soup.find(class_="entry-content")
-
+    
     #remove "share this post" part
     
     return chapter, chapter_title

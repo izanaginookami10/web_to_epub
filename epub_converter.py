@@ -96,6 +96,7 @@ while True:
                 link_list = []
                 for link in links:
                     link_list.append(link.strip())
+            os.remove('temp.txt')
     if one:
         link_list.append(toc_link)
         finished_flag = False
@@ -110,7 +111,7 @@ while True:
         name_counter = 1
         
     cleaned_html_files = []
-
+    
     for x in range(len(link_list)):
         #for each link in link_list, check if the downloaded and cleaned file 
         #already exist (maybe from previous interrupted run) and if not continue
@@ -125,8 +126,8 @@ while True:
                 str(name_counter) + '.xhtml', parser, info, imgs)
             #clean all downloaded flies
             
-        print('Chapter ' + str(name_counter) + ' of ' + str(len(link_list)) + 
-            ' processed...')
+        print(f'Chapter {str(name_counter)} ({str(x+1)} of '
+            f'{str(len(link_list))}) processed...')
         name_counter += 1
 
     #due to f.clean() making multiple xhtml files if there are imgs, can't
@@ -170,7 +171,7 @@ while True:
     elapsed_time = time.time() - start_time
     print('Time taken to finish: ' + str(elapsed_time) + ' seconds (around '
         + str(elapsed_time//60) + ' minutes)')
-    flag = input('Want to download another epub? y/n ')
+    flag = input('\nWant to download another epub? y/n ')
     flag = f.check_error_yn(flag)
     if flag.lower() == 'y':
         continue
