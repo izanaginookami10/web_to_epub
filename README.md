@@ -1,7 +1,7 @@
 # web_to_epub
 Just a new-newbie personal project to read offline webnovels done with online tutorials.
 
-I've added an exe file, so you can try the script by using the .exe file. Just double click on it after you've downloaded it.
+<strong>I've added an exe file, so you can try the script by using the .exe file. Just double click on it after you've downloaded it.</strong>
 
 Ignore the "dist" folder. I'm dumb and can't understand how to delete that folder. I know I need to use the terminal, but will look up how to do it later.
 
