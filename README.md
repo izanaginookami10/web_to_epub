@@ -1,4 +1,6 @@
 # web_to_epub
+<strong>Ignore the 'dist' folder, just get the .exe file (just double click) or the .py (execute them on your IDE) files</strong>. I just don't now how to delete a whole folder on github (yet).
+
 Just a new-newbie personal project to read offline webnovels done with online tutorials.
 
 <strong>I've added an exe file, so you can try the script by using the .exe file. Just double click on it after you've downloaded it.</strong>
