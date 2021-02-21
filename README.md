@@ -3,7 +3,7 @@ Just a new-newbie personal project to read offline webnovels done with online tu
 
 <strong>I'm experiencing some bugs with the chapter ordering when downloading many chapters, will try to fix it asap</strong>
 
-<strongJust get the .exe file or the .py (execute them on your IDE or with the CMD using Python, ie writing "python epub_converter.py") files (need both epub_converter.py AND functions.py)</strong> and it should prompt a CMD window from which you should be able to download and make epubs of online novels by following instructions (just copy paste ToC/Chapter link and choose whether you want it all downloaded or if you prefer a specific range of chapters).
+<strong>Just get the .exe file or the .py (execute them on your IDE or with the CMD using Python, ie writing "python epub_converter.py") files (need both epub_converter.py AND functions.py)</strong> and it should prompt a CMD window from which you should be able to download and make epubs of online novels by following instructions (just copy paste ToC/Chapter link and choose whether you want it all downloaded or if you prefer a specific range of chapters).
 
 If you make use of the py files, you will need to install the necessary modules though. You can also do that with the CMD: "pip install [module name]" (You will be notified of the lacking modules by the script itself). Naturally, you need the "functions.py" file in the same directory as "epub_converter.py" for it to work properly.
 
