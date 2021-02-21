@@ -1,6 +1,8 @@
 # web_to_epub
 Just a new-newbie personal project to read offline webnovels done with online tutorials.
 
+<strong>I'm experiencing some bugs with the chapter ordering when downloading many chapters, will try to fix it asap</strong>
+
 <strong>Ignore the 'dist' folder, just get the .exe file (just double click) or the .py (execute them on your IDE) files</strong>. I just don't now how to delete a whole folder on github (yet).
 
 Or, you could also execute the 'epub_converter.py' file from the cmd using Python ie writing "python epub_converter.py", you will need to install the necessary modules though. You can also do that with the CMD: "pip install [module name]" (You will be notified of the lacking modules by the script itself). Naturally, you need the "functions.py" file in the same directory as "epub_converter.py" for it to work properly.
