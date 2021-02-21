@@ -9,10 +9,17 @@ import re
 import sys
 from bs4 import BeautifulSoup
 import bs4 #for the isinstance check
+from pprint import pprint
 
 forbidden_filenames = ['/', '\\', ':', '*', '?', '"', '<', '>', '|']
 not_chapter_links = ['.jpg', '.jpeg', '.png', '.gif', 'amazon.com', 
     'amazon.jp', 'amazon.uk', '.ico', '.jp']
+
+debug = True
+tags = False
+imgs = False
+#^ will need to link these to some general settings
+
 
 #PARSERS
 ww = 'www.wuxiaworld.com'
@@ -21,10 +28,54 @@ wp = 'wordpress'
 bs = 'blogspot'
 parsers = [ww, rr, wp, bs]
 wp_sites = ['isekailunatic.com', 'defiring.com', 'shirusekai.com',
-    'rhextranslations.com']
+    'rhextranslations.com', 'dreamsofjianghu.ca']
 bs_sites = ['skythewood']
 
 #CORE
+def parser_choice(toc_link):
+    '''Will choose the parser by checking the toc_link'''
+    parser_check = False
+    for site in parsers:
+        if site in toc_link:
+            parser = site
+            parser_check = True
+            break
+    if not parser_check:
+        for site in wp_sites:
+            if site in toc_link:
+                parser = wp
+                parser_check = True
+                break
+    if not parser_check:
+        print('Site not yet compatible.')
+        sys.exit()
+        
+    re_url = 'http.+\/\/.+?\/' #http any until // any until first /
+    url = re.match(re_url, toc_link).group() #group to get matched str
+    url = url[:-1] #exclude the last '/'
+    return parser, url
+
+def get_info(parser, toc_html):
+    if parser == ww:
+        info = get_metadata_ww(toc_html)
+    elif parser == rr:
+        info = get_metadata_rr(toc_html)
+    elif parser == wp:
+        info = get_metadata_wp(toc_html)
+    elif parser == bs:
+        info = get_metadata_bs(toc_html)
+    else:
+        print('Site not yet compatible.')
+        sys.exit()
+    for k, v in info.items():
+        v = delete_forbidden_c(forbidden_filenames, v)
+        info[k] = v
+    if debug:
+        debug_folder = '_debug ' + str(info['novel_name'])
+        if not os.path.exists(debug_folder):
+            os.mkdir(debug_folder)
+    
+    return info
 
 def download(link, file_name):
     '''get content from provided link to a html file, ie download a webpage''' 
@@ -45,17 +96,24 @@ def download(link, file_name):
     
     
 def get_link_list(toc_html, link_list, flag, chapter_start, chapter_end, 
-    parser):
-    '''given a RoyalRoad toc, fill the link_list with its chapters link
+    parser, url):
+    '''given a toc, fill the link_list with its chapters link
     and return chapter_start and chapter_end for later use'''
     if parser == 'www.royalroad.com':
         toc = get_toc_rr(toc_html)
     elif parser == 'www.wuxiaworld.com':
-        toc = get_toc_ww(toc_html)
+        toc, titles = get_toc_ww(toc_html)
     elif parser == 'wordpress':
         toc = get_toc_wp(toc_html)
     elif parser == bs:
         toc = get_toc_bs(toc_html)
+    
+    if not toc:
+        print('Sorry, wasn\'t able to parse any links.')
+        sys.exit()
+        
+    for n, title in enumerate(titles):
+        print(str(n+1) + ' - ' + title.strip())
         
     if flag.lower() == 'y':
         chapter_start = input('From which chapter do you want to start? ')
@@ -86,11 +144,21 @@ def get_link_list(toc_html, link_list, flag, chapter_start, chapter_end,
         except:
             print('Chapters range not available. Retry with another one.')
             sys.exit()
-    elif flag.lower() == 'n':
-        for a in toc:
-            link_list.append(a['href'])
     
-    for link in link_list.copy():
+    
+    elif flag.lower() == 'n':
+       for a in toc:
+            if a.has_attr('href'): #avoid fake links
+                link_list.append(a['href'])
+        
+    for n, link in enumerate(link_list): 
+        if link[0] == '/': #it means they're implying a site sub dir
+            #using enumerate to get link_list items directly as otherwise
+            #can't edit them by using the loop items (link!=link_list[n])
+            link_list[n] = url + link #add main url of site to implied link
+            #(requests won't be able to get it otherwise)         
+            
+    for link in link_list.copy(): #bettr not to edit list while looping it
         for i in not_chapter_links:
             if i in link:
                 link_list.remove(link)
@@ -100,50 +168,185 @@ def get_link_list(toc_html, link_list, flag, chapter_start, chapter_end,
                 #to remove an already removed link
     return chapter_start, chapter_end #maybe I should make them glob vars...
     
+def get_chapter_content(file_name_in, info, parser, imgs):
+    if parser == rr:
+        chapter, chapter_title = find_chapter_content_rr(file_name_in, info)
+    elif parser == ww:
+        chapter, chapter_title = find_chapter_content_ww(file_name_in)
+    elif parser == wp:
+        chapter, chapter_title = find_chapter_content_wp(file_name_in)
+    elif parser == bs:
+        chapter, chapter_title = find_chapter_content_bs(file_name_in)
+    #chapter is the whole div/whatever tag the chapter content is in,
+    #necessary to have the "raw" chapter html for get_imgs()
+    
+    if debug: #to get an untouched copy of original source to check results
+        debug_folder = '_debug ' + str(info['novel_name'])
+        with open(debug_folder + '\\' + chapter_title + '.html', 'w', 
+            encoding='utf-8') as html:
+             html.write(str(chapter))
+    
+    if imgs: #to opt out of getting imgs due to eventual bugs
+        chapter = get_imgs(chapter, imgs) 
+    #get img filenames, download them and mark the tags in the html file
+    
+    if tags: #to make it optional, because of eventual bugs to fix
+        chapter = keep_tags(chapter)
+    #mark tags in chapter 
+    
+    
+    if tags:
+        chapter = BeautifulSoup(chapter, 'html.parser')
+    #str obj -> BeautifulSoup obj again
+    if imgs:
+        chapter.div.unwrap() #due to making it a bs4 object in get_img, 
+    #contents will get also the outer chapter content div, so we delete it 
+    chapter = chapter.contents 
+    #attribute contents get whatever element once, full with eventual 
+    #children tags.
+    #findAll get redundant tags (parent and children separatedly, so 
+    #children show up multiple times). Can't use .text or .get_text() as it 
+    #doen't assure \n in the string, so it might result in a wall of text. 
+
+    return chapter, chapter_title
+    
+def keep_tags(chapter):    
+    tags = ['em', 'i', 'b', 'strong']
+    #to keep as much formatting as possible, will insert tags markers
+    #in order to restore them later
+    chapter = str(chapter) 
+    #BeautifulSoup.tag obj -> str object in order to use str.replace
+    for tag in tags:
+        otag = '<' + tag 
+        ctag = '</' + tag
+        mtag = '-' + tag + '-' #tag marker
+        cmtag = '-/' + tag + '-' #closing tag marker
+        if tag in chapter:
+            chapter = chapter.replace(otag, mtag+otag)
+            #<tag -> -tag-<tag
+            #because the otag might contains unknown attributes
+            chapter = chapter.replace(ctag, cmtag+ctag)
+            #</tag -> -/tag-</tag
+    #img tags were marked with get_imgs() through tag.wrap(new_tag)
+    return chapter
+
+def get_imgs(chapter, imgs):
+    '''append images filenames to given list (2nd arg), download them 
+    and mark their tags in the html files'''
+    
+    chapter = str(chapter)
+    chapter = BeautifulSoup(chapter, 'html.parser')
+    #necessary to convert chapter from bs4.element.Tag to 
+    #bs4.BeautifulSoup obj in order to add new p tag
+    
+    for img in chapter.findAll('img'): #find all img tags
+        src = img['src'] #their source link/url
+        if '?' in src: 
+            #if they have '?' parts for different res, filter them out
+            src = src.split('?', 1) #split with max 2 elements
+            src = src[0] #keep only first part of url
+        
+        if 'data:image' in src:
+            continue
+        #due to the possibility of imgs being data URI, ie something like
+        #'data:image/png;base64,xxxxxxx...' ie coded in basecode64 or similar
+        #I'll ignore them for now, until I bump in a site that has them
+        
+        
+        
+        #download imgs
+        i = requests.get(src).content #get img content
+        filename = src.split('/')[-1] #get img filename 
+        with open(filename, 'wb') as image:
+            image.write(i) #download img 
+        imgs.append(filename) #append img name to images list
+        
+        #wrap the img tags in chapter html with p tag to mark them 
+        p = chapter.new_tag('p')
+        p.string = '-img-' + filename + '-/img-'
+        img.wrap(p)
+    return chapter
+    
+    
+    
 def clean(file_name_in, file_name_out, parser, info, imgs):
     '''takes html file from download function and give as output a cleaned
     version of it'''
     
     chapter, chapter_title = get_chapter_content(file_name_in, info, 
         parser, imgs)
-    
+
     txt = ''
     for t in chapter: #chapter is a list of bs4 obj (tag and navstrings)
     #in order to try to keep the original chapter formatting as much as possible,
     #the tags were substituted with -tag- and are now returned as tags
+        
         if isinstance(t, bs4.element.Tag): #navstring don't have get_text
+            #need to have a tag, not a navstring to check for br tags, 
+            #as for some reason navstring always satisfy the tag.find() method
+            if t.find('br'): #if there are any br tags in t
+                for b in t.findAll('br'): #for all br tags in t
+                    b.replaceWith('-br-') #replace tag <br/> with navString
+                    #'-br-'. Precious attempt of using soup.new_tag() failed
+                    #because I cannot use soup.insert(new_tag) as soup 
+                    #(ie chapter) is now a list of tags and because I need
+                    #to insert them in the 't', ie each item of chapter.contents
+                    #which isn't a BeautifulSoup obj but a bs4.element.Tag
+                    #that in turn doesn't allow new_tag() or insert() arising
+                    #errors
+                #sometimes there are <br> tags within <p> tags, which aren't
+                #kept with the get_text() function as they are ignored
+                #since they're tags and not text
+            
             t = t.get_text() 
             #if strip=True, it will delete \xa0, which I don't want as I
             #need to replace it with a normal space
+            
         if '\xa0' in t:
             t = t.replace('\xa0', ' ') 
             #ww had them instead of spaces after the dots, they are
             #non-breaking space, in html it's "&nbsp", it becomes '\xa0'
             #in unicode
-        if '-em-' in t:
-            t = t.replace('-em-', '<em>').replace('-/em-', '</em>')
-        if '-i-' in t:
-            t = t.replace('-i-', '<i>').replace('-/i-', '</i>')
-        if '-b-' in t:
-            t = t.replace('-b-', '<b>').replace('-/b-', '</b>')
-        if '-strong-' in t:
-            t = t.replace('-strong-', '<strong>').replace('-/strong-', 
-                '</strong>')
+            
+        if tags:
+            if '-em-' in t:
+                t = t.replace('-em-', '<em>').replace('-/em-', '</em>')
+            if '-i-' in t:
+                t = t.replace('-i-', '<i>').replace('-/i-', '</i>')
+            if '-b-' in t:
+                t = t.replace('-b-', '<b>').replace('-/b-', '</b>')
+            if '-strong-' in t:
+                t = t.replace('-strong-', '<strong>').replace('-/strong-', 
+                    '</strong>')
+        #the above code WON'T work like in gamers chapter 2, because the---------------------------------
+        #opening tags could contain other stuff other than <b>, like
+        #<b something something>. So these ones will not be replaced with
+        #-b-, but </b> will be with -/b-. And since the if triggers are
+        #if -b- appears, and in this case they don't, the substituted
+        #-/b- will remain. Meaning that I need to put the -b- before the
+        #the opening tag, as I can't predict what's inside the opening 
+        #tag, like replace ('<b', '-b-<b') or maybe use regex... if it
+        #has a replace function, re.replace('<b.*>', '<b.*>-b-')
+        #I don't think it will be a issue putting it before the opening
+        #tag though.
+        t = t.replace('-br-', '<br>') #substittue eventual br marker with tags
+        
         txt += t + '\n'
     chapter = txt
 
     chapter = chapter.strip().split('\n') #now a list of lines
-
-    nav = ['Previous Chapter', 'Next Chapter', '|', 'Main Page', 'Toc',
-        'Table of Content']
-    last_lines = 10
-    for n in range(last_lines):
-        n += 1 #range will go from 0 to 9
-        ll = chapter[-n] #each loop will go over line from the end
-        for i in nav:
-            if i.lower() in ll.lower():
-                chapter[-n] = chapter[-n].replace(i, '')    
-                #can't use ll because it won't edit the real list item 
+    
+    if len(chapter) > 10:
+        nav = ['Previous Chapter', 'Next Chapter', '|', 'Main Page', 'Toc',
+            'Table of Content']
+        last_lines = 10
+        for n in range(last_lines):
+            n += 1 #range will go from 0 to 9
+            ll = chapter[-n] #each loop will go over line from the end
+            for i in nav:
+                if i.lower() in ll.lower():
+                    chapter[-n] = chapter[-n].replace(i, '')    
+                    #can't use ll because it won't edit the real list item 
         
     chapter = '\n'.join(chapter)
     #in case there are unnecessary prev, next chapters in last 3 lines
@@ -156,12 +359,13 @@ def clean(file_name_in, file_name_out, parser, info, imgs):
     #<p> tag, this will leave a missing opening tag at the beginning and a
     #closing tag at the end 
     
-    img_tag = '-img-'
-    if img_tag in chapter:
-        chapter = chapter.replace('-img-', '<img src="').replace('-/img-',
-            '">')
-    write_xhtml(file_name_out, chapter_title, chapter)
-    
+    if imgs:
+        img_tag = '-img-'
+        if img_tag in chapter:
+            chapter = chapter.replace('-img-', '<br><img src="').replace(
+                '-/img-','"><br>') #adding break lines before and after img
+    write_xhtml(file_name_out, chapter_title, chapter)  
+        
     #closed all tags and file, now we delete the file_name_in, ie raws
     os.remove(file_name_in)
 
@@ -183,80 +387,6 @@ def write_xhtml(file_name_out, chapter_title, chapter):
         xhtml.write('\n</body>')
         xhtml.write('\n</html>')
 
-def get_chapter_content(file_name_in, info, parser, imgs):
-    if parser == rr:
-        chapter, chapter_title = find_chapter_content_rr(file_name_in, info)
-    elif parser == ww:
-        chapter, chapter_title = find_chapter_content_ww(file_name_in)
-    elif parser == wp:
-        chapter, chapter_title = find_chapter_content_wp(file_name_in)
-    elif parser == bs:
-        chapter, chapter_title = find_chapter_content_bs(file_name_in)
-    #chapter is the whole div/whatever tag the chapter content is in,
-    #necessary to have the "raw" chapter html for get_imgs()
-    #chapter = get_imgs(chapter, imgs) 
-    #get img filenames, download them and mark the tags in the html file
-    
-    tags = ['em', 'i', 'b', 'strong']
-    #to keep as much formatting as possible, will insert tags markers
-    #in order to restore them later
-    chapter = str(chapter) 
-    #BeautifulSoup.tag obj -> str object in order to use str.replace
-    for tag in tags:
-        otag = '<' + tag 
-        ctag = '</' + tag
-        mtag = '-' + tag + '-' #tag marker
-        cmtag = '-/' + tag + '-' #closing tag marker
-        if tag in chapter:
-            chapter = chapter.replace(otag+'>', otag+'>'+mtag)
-            #<tag> -> <tag>-tag-
-            chapter = chapter.replace(ctag, cmtag+ctag)
-            #</tag -> -/tag-</tag
-    #img tags were marked with get_imgs() through tag.wrap(new_tag)
-    
-    chapter = BeautifulSoup(chapter, 'html.parser')
-    #str obj -> BeautifulSoup obj again
-    chapter.div.unwrap() #due to making it a bs4 object in get_img, 
-    #contents will get also the outer chapter content div, so we delete it 
-    chapter = chapter.contents 
-    #attribute contents get whatever element once, full with eventual 
-    #children tags.
-    #findAll get redundant tags (parent and children separatedly, so 
-    #children show up multiple times). Can't use .text or .get_text() as it 
-    #doen't assure \n in the string, so it might result in a wall of text. 
-    
-
-    return chapter, chapter_title
-
-def get_imgs(chapter, imgs):
-    '''append images filenames to given list (2nd arg), download them 
-    and mark their tags in the html files'''
-    
-    chapter = str(chapter)
-    chapter = BeautifulSoup(chapter, 'html.parser')
-    #necessary to convert chapter from bs4.element.Tag to 
-    #bs4.BeautifulSoup obj in order to add new p tag
-    
-    for img in chapter.findAll('img'): #find all img tags
-        src = img['src'] #their source link/url
-        if '?' in src: 
-            #if they have '?' parts for different res, filter them out
-            src = src.split('?', 1) #split with max 2 elements
-            src = src[0] #keep only first part of url
-        
-        #download imgs
-        i = requests.get(src).content #get img content
-        filename = src.split('/')[-1] #get img filename 
-        with open(filename, 'wb') as image:
-            image.write(i) #download img 
-        imgs.append(filename) #append img name to images list
-        
-        #wrap the img tags in chapter html with p tag to mark them 
-        p = chapter.new_tag('p')
-        p.string = '-img-' + filename + '-/img-'
-        img.wrap(p)
-    return chapter
-
 def find_between(file):
     with open(file, 'r', encoding='utf8') as f:
         soup = BeautifulSoup(f, 'html.parser')
@@ -272,7 +402,7 @@ def get_title_list(cleaned_html_files):
             title_list.append(soup.title.get_text(strip=True))
     return title_list
 
-def generate(cleaned_html_files, novel_name, author, epub_name, imgs):
+def generate(cleaned_html_files, novel_name, author, epub_name, imgs, info):
     #chapter_s and _e are starting and ending chapters
     epub_name = delete_forbidden_c(forbidden_filenames, epub_name)
     #delete any unallowed characters in epub filename
@@ -286,7 +416,7 @@ def generate(cleaned_html_files, novel_name, author, epub_name, imgs):
     #create in epub a file named 'mimetype' which contain the string
     #application/epub+zip'. This file is the same for all epub files
     print('Creating Epub file (1/4)...'
-        '\nmimetype created')
+        '\n-mimetype created')
     
     epub.writestr('META-INF/container.xml', '<container version="1.0"'
         '\nxmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
@@ -297,8 +427,8 @@ def generate(cleaned_html_files, novel_name, author, epub_name, imgs):
         '\n</container>')
     #make file 'container.xml' in folder 'META-INF'. Same for every epub
     print('Creating Epub file (2/4)...'
-        '\ncontainer.xml created'
-        '\ncreating content.opf...')
+        '\n-container.xml created'
+        '\n-creating content.opf...')
     
     #content.opf is more complex and it will be like this
     index_tpl = '''
@@ -381,7 +511,7 @@ def generate(cleaned_html_files, novel_name, author, epub_name, imgs):
         #placeholder variables in the %()s with their filled counterparts
         
     print('Creating Epub file (3/4)...'
-        '\ncontent.opf created')
+        '\n-content.opf created')
         
     #content.opf is finished, now last file: ToC, which we divide into 3 
     #parts: start, of which we only need to fill the novelname, mid, of which 
@@ -421,51 +551,29 @@ def generate(cleaned_html_files, novel_name, author, epub_name, imgs):
         #write OEB... and the toc filled with the variables
     print('Creating Epub file (4/4)...'
         '\ntoc.xhtml created')
-    
-    epub.close()
+    epub.close()    
+    if debug:
+        debug_folder = '_debug ' + str(info['novel_name'])
+        '''
+        epub_contents = epub.namelist()
+        for namefile in epub_contents:
+            with epub.open(namefile) as content:
+                content = content.read()
+            with open(debug_folder + '\\' + namefile.replace('/', '_') 
+                + '.txt', 'w', encoding='utf-8') as f:
+                f.write(str(content))
+    #if debug is on, make a readable txt copy of the epub files
+        '''
+        with zipfile.ZipFile(epub_name, 'r') as zip_ref:
+            zip_ref.extractall(debug_folder)
+        #get all epub contents in debug folder to check
+        
+
     for x in cleaned_html_files:
         os.remove(x)
     print('Epub created'
         '\nFinished')
-
-
-#PARSER
-def parser_choice(toc_link):
-    '''Will choose the parser by checking the toc_link'''
-    parser_check = False
-    for site in parsers:
-        if site in toc_link:
-            parser = site
-            parser_check = True
-            break
-    if not parser_check:
-        for site in wp_sites:
-            if site in toc_link:
-                parser = wp
-                parser_check = True
-                break
-    if not parser_check:
-        print('Site not yet compatible.')
-        sys.exit()
-    return parser
-
-def get_info(parser, toc_html):
-    if parser == ww:
-        info = get_metadata_ww(toc_html)
-    elif parser == rr:
-        info = get_metadata_rr(toc_html)
-    elif parser == wp:
-        info = get_metadata_wp(toc_html)
-    elif parser == bs:
-        info = get_metadata_bs(toc_html)
-    else:
-        print('Site not yet compatible.')
-        sys.exit()
-    for k, v in info.items():
-        v = delete_forbidden_c(forbidden_filenames, v)
-        info[k] = v
         
-    return info
 
     
 #royalroad.com
@@ -486,8 +594,16 @@ def get_metadata_rr(toc_html):
         soup = BeautifulSoup(toc, 'html.parser')
         author = soup.find(property='author')
         author = author.find('a')
-        author = author.get_text(strip=True)
-        
+        if author:
+            author = author.get_text(strip=True)
+        else:
+            author = soup.find('span', string=' by ')
+            author = soup.next_sibling.next_sibling.text 
+            #rr has different layout for single pages, so author 
+            #is found in this case (ie if property='author' returns
+            #none) by getting next tag after the ' by ', then get 
+            #the next one again since the 1st one was whitespace 
+    
         novel_name = soup.find('h1')
         novel_name = novel_name.get_text(strip=True)
         raw_novel_name = novel_name
@@ -528,9 +644,10 @@ def get_toc_ww(file_name_in):
         soup = BeautifulSoup(raw, 'html.parser')
     chapters = soup.find_all(class_="chapter-item")
     toc = [chapter.a for chapter in chapters]
+    titles = [chapter.a.text for chapter in chapters]
     for a in toc:
         a['href'] = 'https://www.wuxiaworld.com' + a['href']
-    return toc
+    return toc, titles
 
 def get_metadata_ww(file_name_in):
     with open(file_name_in, 'r', encoding='utf8') as raw:
@@ -581,7 +698,7 @@ def get_toc_wp(file_name_in):
     with open(file_name_in, 'r', encoding='utf8') as raw:
         soup = BeautifulSoup(raw, 'html.parser')
     chapters = soup.find(class_="entry-content")
-    
+
     share = chapters.find(id="jp-post-flair")
     if share: #maybe wp authors won't make the post commentable
         share.decompose()
@@ -616,7 +733,8 @@ def find_chapter_content_wp(file_name_in):
     chapter_title = chapter_title.get_text(strip=True)
     chapter = soup.find(class_="entry-content")
     share = chapter.find(id="jp-post-flair")
-    share.decompose()
+    if share: #maybe wp authors won't make the post commentable
+        share.decompose()
     #remove "share this post" part
 
     return chapter, chapter_title

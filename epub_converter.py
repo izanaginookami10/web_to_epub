@@ -10,12 +10,97 @@ import time
 
 
 #THINGS TO DO
+#check for duplicate chapter links when getting the links list and erase
+#them (check if combination of url and navstring is same as another one?)
+
+#refactor this shit, especially, minimize the epub_converter.py file to
+#be higher leveled and more understandable -> make more functions
+
+#fucking settings
+
 #make the parser detection execute at EVERY link of toc, as there might
 #be outsourced translations
+#to do that, I will have to first implement a way to get the toc link
+#first? This would introduce the need to make a GENERAL PARSER for sites
+#which haven't a specific parser. Like getting the chapter content by
+#finding the div tag with most text, excluding it if it has too many links
+#as that would be most likely the comment section.
+#Alternatively, I could insert a second parser detection within each
+#get_chapter_content()?
 
+#this is strictly related to the above point
 #if in middle of execution, make unparsable links not stop the program
 #but just print a warning msg that said link/page wasn't downloaded for
 #parsing reasons
+
+#the img implementation works for now, but it would be more optimal to
+#have each img be in their separated xhtml page. The logic is already
+#done: basically split each chapter at every img tag occurence and then
+#write them in the epub in that order. The issue would be changing how 
+#it works now, as the clean() function would output multiple files, for 
+#this writing the part (and adding it to the manifest as well as spine)
+#can't be in the same loop based on link_list items, but must be based
+#on the cleaned_html_files list. Such list also cannot be made after the
+#clean() function finished, as listdir would append the file in an order
+#different from the intended one, meaning I would need to append each part
+#to the list as soon as they've cleaned and before the next part is cleaned
+#a workaround might be tweaking with the spine? or maybe make the
+#epub generation happen with the generation of cleaned html files
+#like before? This would need to somehow either take out from
+#clean() the partition of chapter in parts if there is an image,
+#or somehow link this creation with the epub generation, maybe
+#using the filenames huh...
+
+#also NEED to find a way to erase empty html pages made with
+#get_imgs()
+
+#make clean() take the cleaned files list as arg and then append
+#each item there directly as soon as the file is "cleaned"
+
+#enchant the way nav elements such as next prev chapter are deleted,
+#by adding a search for a tags in the chapter content with related
+#string, checking line by line the html raw, deleting maybe everything
+#on the related line
+
+'''
+to add to clean(), after the img tag replacements -img- to <img
+    parts = re.split('(<img.+>)', chapter.strip())
+    og_filename_out = file_name_out
+    og_chapter_title = chapter_title
+    counter = 1
+    img_counter = 1
+    for part in parts:
+        img_name = ' - illustration ' + str(img_counter)
+        file_name_out = og_filename_out
+        chapter_title = og_chapter_title
+        #at next loops they would be edited by prev loops otherwise
+        file_name_out = file_name_out.split('.')
+        #parts with image will have "illustration (n)" while chapter
+        #text parts just a number after their filenames/titles
+        if '<img' in part:
+            file_name_out[0] += img_name
+        else:
+            file_name_out[0] += '-' + str(counter)
+        
+        file_name_out = '.'.join(file_name_out)
+        #edit file_name_out adding number for each part before the
+        #.xhtml part
+        
+        if '<img' in part:
+            chapter_title = chapter_title + img_name
+        else:
+            chapter_title = chapter_title + ' (' + str(counter) + ')'
+        chapter = part
+        
+        write_xhtml(file_name_out, chapter_title, chapter)
+        
+        if '<img' in part:
+            img_counter += 1
+        else:
+            counter += 1
+else:
+'''
+
 
 #with the link edit feature, make it a possibility to download multiple
 #epubs at once by splitting the link list by some separator, like 
@@ -27,7 +112,7 @@ import time
 #there is a function I quite dislike which I need to refactor better,
 #the get_link_list one, but since it works for now, it's low priority
 
-while True:
+while True: #to continue converting after doing one epub
     one = False
     toc = False
 
@@ -42,7 +127,7 @@ while True:
         
     toc_link = input('Link? ')
 
-    parser = f.parser_choice(toc_link)
+    parser, url = f.parser_choice(toc_link)
     toc_html = 'toc.html'
 
     f.download(toc_link, toc_html)
@@ -71,7 +156,7 @@ while True:
             else:
                 print('Series unfinished, got it. Continuing...')
         chapter_start, chapter_end = f.get_link_list(toc_html, link_list, flag, 
-            chapter_start, chapter_end, parser)
+            chapter_start, chapter_end, parser, url)
         #fill link_list and get chapter_start and chapter_end
         #I'm truly disliking this function that does too many things confusingly
         #I'm going to soon fix it, probably separating them?
@@ -165,7 +250,7 @@ while True:
         epub_name = novel_name + ' ' + chapter_s + latter + '.epub'
 
     f.generate(cleaned_html_files, info["novel_name"], info["author"], 
-        epub_name, imgs)
+        epub_name, imgs, info)
         #generate epub using cleaned files and making the necessary files
 
     elapsed_time = time.time() - start_time
