@@ -80,7 +80,7 @@ def get_info(parser, toc_html):
 def download(link, file_name):
     '''get content from provided link to a html file, ie download a webpage''' 
     s = cloudscraper.create_scraper()
-    #using cloudscraper to bypass cloudflare bot check
+    #using cloudscraper to bypass cloudflare bot checks
     
     ua_edge = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.125 Safari/537.36 Edg/84.0.522.59')
     headers = {'User-Agent': ua_edge,

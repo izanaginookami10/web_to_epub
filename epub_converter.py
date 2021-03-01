@@ -7,7 +7,7 @@ import requests
 import cloudscraper
 import sys
 import time
-
+from natsort import natsorted #else chapters will be ordered lexicographically
 
 #THINGS TO DO
 #check for duplicate chapter links when getting the links list and erase
@@ -143,7 +143,8 @@ while True: #to continue converting after doing one epub
         #if the request is just one link, skip all link list creation
         flag = input('\nDo you want to choose a specific range of chapters? y/n'
             '\nIf "n" is chosen (written), then the whole available Toc will be '
-            'downloaded and converted to Epub \n')
+            'downloaded and converted to Epub.'
+            '\nIf "y" is chosen, a list of available chapters with their indexes/chapter numbers will be shown.\n')
         flag = f.check_error_yn(flag)
 
         finished_flag = False
@@ -220,6 +221,15 @@ while True: #to continue converting after doing one epub
     files = os.listdir() #make list of all files and paths in working folder
     cleaned_html_files = [i for i in files if i.startswith('clean') and 
         i.endswith('.xhtml')]
+        
+    #the cleaned_html_files list will be ordered lexicographically, this
+    #means that chapter_1 will be followed by chapter_11, chapter_12, etc
+    #instead of chapter_2, a workaround would be including the appending
+    #in the previous loop, but it wouldn't allow to include images as per
+    #previous comment, thus the need to sort the list with natsort (could
+    #have done it with some sort(), lambda, re shenaningans probably tho
+    cleaned_html_files = natsorted(cleaned_html_files)
+    
     #narrow files list to only the cleaned chapters
 
     title_list = f.get_title_list(cleaned_html_files)
