@@ -135,18 +135,13 @@ while True: #to continue converting after doing one epub
     info = f.get_info(parser, toc_html)
 
     imgs = []
-    link_list = []
+
     chapter_start = ''
     chapter_end = ''
 
     if toc:
         #if the request is just one link, skip all link list creation
-        flag = input('\nDo you want to choose a specific range of chapters? y/n'
-            '\nIf "n" is chosen (written), then the whole available Toc will be '
-            'downloaded and converted to Epub.'
-            '\nIf "y" is chosen, a list of available chapters with their indexes/chapter numbers will be shown.\n')
-        flag = f.check_error_yn(flag)
-
+        '''
         finished_flag = False
         if flag.lower() == 'n':
             a = input('Is the novel finished? Chapters range won\'t be shown in'
@@ -156,37 +151,27 @@ while True: #to continue converting after doing one epub
                 finished_flag = True
             else:
                 print('Series unfinished, got it. Continuing...')
-        chapter_start, chapter_end = f.get_link_list(toc_html, link_list, flag, 
-            chapter_start, chapter_end, parser, url)
-        #fill link_list and get chapter_start and chapter_end
-        #I'm truly disliking this function that does too many things confusingly
-        #I'm going to soon fix it, probably separating them?
-        if parser != 'wordpress' and parser != 'blogspot':
-            edit = input('Do you want to edit the link list? y/n ')
-            edit = f.check_error_yn(edit)
-        else:
-            print('Please check link list and edit it if necessary.')
-        if parser == 'wordpress' or parser == 'blogspot' or edit.lower() == 'y' :
-            with open('temp.txt', 'w', encoding='utf8') as t:
-                for link in link_list:
-                    t.write(link)
-                    t.write('\n')
-                os.startfile('temp.txt')
-            input('Edit list in txt editor and press any button to continue ' +
-                'after having closed the editor. ')
-            with open('temp.txt', 'r', encoding='utf8') as t:
-                links = t.read()
-                links = links.strip()
-                links = links.split('\n')
-                links = [link for link in links if link != '']
-                link_list = []
-                for link in links:
-                    link_list.append(link.strip())
-            os.remove('temp.txt')
+        '''
+        #the finished flag part is a waste of time for my tests
+        #if anyone want it just take away the opening and closing "'''" 
+        
+        link_list = f.get_link_list(toc_html, parser, url)
+        #make/fill link_list
+        
+        link_list = f.edit_link_list(parser, link_list)
+        #fix link_list, due to editing here the chapters selection is off
+        #as it's too redundant right now
+    '''
+        #print chapters and ask whether it's okay or if a range is needed
+        flag = input('\nDo you want to choose a specific range of chapters? y/n'
+    '\nIf "n" is chosen (written), then the whole available Toc will be '
+    'downloaded and converted to Epub.'
+    '\nIf "y" is chosen, a list of available chapters with their indexes/chapter numbers will be shown.\n')
+        flag = f.check_error_yn(flag)
     if one:
         link_list.append(toc_link)
-        finished_flag = False
-        
+        #finished_flag = False
+      '''  
     os.remove(toc_html)
     start_time = time.time()
 
@@ -202,18 +187,21 @@ while True: #to continue converting after doing one epub
         #for each link in link_list, check if the downloaded and cleaned file 
         #already exist (maybe from previous interrupted run) and if not continue
         #by downloading and cleaning all chapters from the links
-        if not os.path.exists('clean-' + info["chapter_file_names"] + 
+        file_name = (info['chapter_file_names'].replace(' ', '-') +
+            '-' + str(name_counter))
+        file_name = f.delete_forbidden_c(f.forbidden_filenames, file_name)
+        #spaces and forbidden charas aren't allowed in links, and the chapter 
+        #name will be the href link in the content.opf part of the epub file
+        if not os.path.exists('clean-' + file_name + 
             str(name_counter) + ".xhtml"):
-            f.download(link_list[x], 'raw-' + info['chapter_file_names'] + 
-                str(name_counter) + '.html')
+            f.download(link_list[x], 'raw-' + file_name + '.html')
             #download all files from link_list
-            f.clean('raw-' + info['chapter_file_names'] + str(name_counter) 
-                + '.html', 'clean-' + info['chapter_file_names'] + 
-                str(name_counter) + '.xhtml', parser, info, imgs)
+            chapter_title = f.clean('raw-' + file_name + '.html', 'clean-' 
+                + file_name + '.xhtml', parser, info, imgs)
             #clean all downloaded flies
             
-        print(f'Chapter {str(name_counter)} ({str(x+1)} of '
-            f'{str(len(link_list))}) processed...')
+        print(f'Chapter {str(x+1)}/{str(len(link_list))} ("{chapter_title}")'
+            ' processed...')
         name_counter += 1
 
     #due to f.clean() making multiple xhtml files if there are imgs, can't
@@ -251,13 +239,15 @@ while True: #to continue converting after doing one epub
 
     novel_name = info['novel_name']
 
+    '''
     if finished_flag:
         epub_name = novel_name + '.epub'
     else:
-        latter = '-' + chapter_e
-        if one:
-            latter = ''
-        epub_name = novel_name + ' ' + chapter_s + latter + '.epub'
+    '''
+    latter = '-' + chapter_e
+    if one:
+        latter = ''
+    epub_name = novel_name + ' ' + chapter_s + latter + '.epub'
 
     f.generate(cleaned_html_files, info["novel_name"], info["author"], 
         epub_name, imgs, info)

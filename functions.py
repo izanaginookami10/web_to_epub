@@ -11,7 +11,8 @@ from bs4 import BeautifulSoup
 import bs4 #for the isinstance check
 from pprint import pprint
 
-forbidden_filenames = ['/', '\\', ':', '*', '?', '"', '<', '>', '|']
+forbidden_filenames = ['/', '\\', ':', '*', '?', '"', '<', '>', '|', "'",
+    '’', '!']
 not_chapter_links = ['.jpg', '.jpeg', '.png', '.gif', 'amazon.com', 
     'amazon.jp', 'amazon.uk', '.ico', '.jp']
 
@@ -20,13 +21,18 @@ tags = False
 imgs = False
 #^ will need to link these to some general settings
 
+#the get_toc functions need editing for the a tags: sometimes they're returned as
+#a tags list, sometimes as url list. Better to have them act the same...
+#maybe make them all return a tags and do the polishing in a common later phase
 
 #PARSERS
+gp = 'general parser'
 ww = 'www.wuxiaworld.com'
 rr = 'www.royalroad.com'
 wp = 'wordpress'
 bs = 'blogspot'
 parsers = [ww, rr, wp, bs]
+perfect_parsers = [ww, rr]
 wp_sites = ['isekailunatic.com', 'defiring.com', 'shirusekai.com',
     'rhextranslations.com', 'dreamsofjianghu.ca']
 bs_sites = ['skythewood']
@@ -47,8 +53,7 @@ def parser_choice(toc_link):
                 parser_check = True
                 break
     if not parser_check:
-        print('Site not yet compatible.')
-        sys.exit()
+        parser = gp
         
     re_url = 'http.+\/\/.+?\/' #http any until // any until first /
     url = re.match(re_url, toc_link).group() #group to get matched str
@@ -65,8 +70,7 @@ def get_info(parser, toc_html):
     elif parser == bs:
         info = get_metadata_bs(toc_html)
     else:
-        print('Site not yet compatible.')
-        sys.exit()
+        info = get_metadata_gp(toc_html)
     for k, v in info.items():
         v = delete_forbidden_c(forbidden_filenames, v)
         info[k] = v
@@ -95,23 +99,74 @@ def download(link, file_name):
         #write the content of var page onto the just created/opened file
     
     
-def get_link_list(toc_html, link_list, flag, chapter_start, chapter_end, 
-    parser, url):
+def get_link_list(toc_html, parser, url):
     '''given a toc, fill the link_list with its chapters link
     and return chapter_start and chapter_end for later use'''
     if parser == 'www.royalroad.com':
-        toc = get_toc_rr(toc_html)
+        toc, titles = get_toc_rr(toc_html)
     elif parser == 'www.wuxiaworld.com':
         toc, titles = get_toc_ww(toc_html)
     elif parser == 'wordpress':
-        toc = get_toc_wp(toc_html)
+        toc, titles = get_toc_wp(toc_html)
     elif parser == bs:
-        toc = get_toc_bs(toc_html)
-    
+        toc, titles = get_toc_bs(toc_html)
+    else:
+        toc, titles = get_toc_gp(toc_html)
+    #toc is a list of url, NOT a tags.
     if not toc:
         print('Sorry, wasn\'t able to parse any links.')
         sys.exit()
-        
+    
+    link_list = toc
+    #adjust link list in case the links aren't full url but partial ones
+    for n, link in enumerate(link_list): 
+        if link[0] == '/': #it means they're implying a site sub dir
+            #using enumerate to get link_list items directly as otherwise
+            #can't edit them by using the loop items (link!=link_list[n])
+            link_list[n] = url + link #add main url of site to implied link
+            #(requests won't be able to get it otherwise)         
+            
+    for link in link_list.copy(): #bettr not to edit list while looping it
+        for i in not_chapter_links:
+            if i in link:
+                link_list.remove(link)
+                break #if a link is removed due to having a match with a
+                #not_chapter_links items, mustn't continue searching for
+                #other matches with other items: another match would try
+                #to remove an already removed link
+    return link_list
+    
+def edit_link_list(parser, link_list):
+    '''edit link list on demand'''
+    if parser in perfect_parsers:
+        edit = input('Do you want to edit (select chapters range, skip ' +
+            ' specific chapters, delete wrong links...) the link list? y/n ')
+        edit = check_error_yn(edit)
+    else:
+        print('Please check link list and edit it if necessary.')
+    if parser not in perfect_parsers or edit.lower() == 'y' :
+        with open('temp.txt', 'w', encoding='utf8') as t:
+            for link in link_list:
+                t.write(link)
+                t.write('\n')
+            os.startfile('temp.txt')
+        link_edit = input('Edit list in txt editor and press any ' +
+            ' button to continue. Press "R" and then ENTER if you ' +
+            'need to reverse the list order.')
+        with open('temp.txt', 'r', encoding='utf8') as t:
+            links = t.read()
+            links = links.strip()
+            links = links.split('\n')
+            links = [link for link in links if link != '']
+            link_list = []
+            for link in links:
+                link_list.append(link.strip())
+        if str(link_edit).upper() == 'R':
+            link_list.reverse()
+        os.remove('temp.txt')
+    return link_list
+    
+def chapters_selection(titles, flag, toc):
     for n, title in enumerate(titles):
         print(str(n+1) + ' - ' + title.strip())
         
@@ -148,25 +203,11 @@ def get_link_list(toc_html, link_list, flag, chapter_start, chapter_end,
     
     elif flag.lower() == 'n':
        for a in toc:
-            if a.has_attr('href'): #avoid fake links
-                link_list.append(a['href'])
-        
-    for n, link in enumerate(link_list): 
-        if link[0] == '/': #it means they're implying a site sub dir
-            #using enumerate to get link_list items directly as otherwise
-            #can't edit them by using the loop items (link!=link_list[n])
-            link_list[n] = url + link #add main url of site to implied link
-            #(requests won't be able to get it otherwise)         
-            
-    for link in link_list.copy(): #bettr not to edit list while looping it
-        for i in not_chapter_links:
-            if i in link:
-                link_list.remove(link)
-                break #if a link is removed due to having a match with a
-                #not_chapter_links items, mustn't continue searching for
-                #other matches with other items: another match would try
-                #to remove an already removed link
-    return chapter_start, chapter_end #maybe I should make them glob vars...
+            if isinstance(a, bs4.element.Tag):
+                if a.has_attr('href'): #avoid fake links
+                    link_list.append(a['href'])
+    return chapter_start, chapter_end #maybe I should make them glob vars...          
+    
     
 def get_chapter_content(file_name_in, info, parser, imgs):
     if parser == rr:
@@ -177,6 +218,8 @@ def get_chapter_content(file_name_in, info, parser, imgs):
         chapter, chapter_title = find_chapter_content_wp(file_name_in)
     elif parser == bs:
         chapter, chapter_title = find_chapter_content_bs(file_name_in)
+    else:
+        chapter, chapter_title = find_chapter_content_gp(file_name_in)
     #chapter is the whole div/whatever tag the chapter content is in,
     #necessary to have the "raw" chapter html for get_imgs()
     
@@ -201,13 +244,14 @@ def get_chapter_content(file_name_in, info, parser, imgs):
     if imgs:
         chapter.div.unwrap() #due to making it a bs4 object in get_img, 
     #contents will get also the outer chapter content div, so we delete it 
-    chapter = chapter.contents 
+    if not isinstance(chapter, list):
+        chapter = chapter.contents #if chapter is already a p tags list skip this
     #attribute contents get whatever element once, full with eventual 
     #children tags.
     #findAll get redundant tags (parent and children separatedly, so 
     #children show up multiple times). Can't use .text or .get_text() as it 
     #doen't assure \n in the string, so it might result in a wall of text. 
-
+    
     return chapter, chapter_title
     
 def keep_tags(chapter):    
@@ -271,11 +315,11 @@ def get_imgs(chapter, imgs):
     
 def clean(file_name_in, file_name_out, parser, info, imgs):
     '''takes html file from download function and give as output a cleaned
-    version of it'''
+    version of it, return chapter title for later use'''
     
     chapter, chapter_title = get_chapter_content(file_name_in, info, 
         parser, imgs)
-
+    
     txt = ''
     for t in chapter: #chapter is a list of bs4 obj (tag and navstrings)
     #in order to try to keep the original chapter formatting as much as possible,
@@ -297,6 +341,11 @@ def clean(file_name_in, file_name_out, parser, info, imgs):
                 #sometimes there are <br> tags within <p> tags, which aren't
                 #kept with the get_text() function as they are ignored
                 #since they're tags and not text
+            if t.find('hr'): #if there are any hr tags in t
+                print('hr')
+                for h in t.findAll('hr'): #for all hr tags in t
+                    h.replaceWith('-hr-') #replace tag <hr> with navString
+           #of course it doesn't find any hr or br... chapter is a bunch of p tags already isn't it
             
             t = t.get_text() 
             #if strip=True, it will delete \xa0, which I don't want as I
@@ -330,7 +379,7 @@ def clean(file_name_in, file_name_out, parser, info, imgs):
         #I don't think it will be a issue putting it before the opening
         #tag though.
         t = t.replace('-br-', '<br>') #substittue eventual br marker with tags
-        
+        t = t.replace('-hr-', '<hr>') #substittue eventual hr marker with tags
         txt += t + '\n'
     chapter = txt
 
@@ -338,14 +387,15 @@ def clean(file_name_in, file_name_out, parser, info, imgs):
     
     if len(chapter) > 10:
         nav = ['Previous Chapter', 'Next Chapter', '|', 'Main Page', 'Toc',
-            'Table of Content']
+            'Table of Content', 'Patreon', 'adblock']
+        first_lines = 5
         last_lines = 10
         for n in range(last_lines):
             n += 1 #range will go from 0 to 9
             ll = chapter[-n] #each loop will go over line from the end
             for i in nav:
                 if i.lower() in ll.lower():
-                    chapter[-n] = chapter[-n].replace(i, '')    
+                    chapter[-n] = chapter[-n].replace(ll, '')    
                     #can't use ll because it won't edit the real list item 
         
     chapter = '\n'.join(chapter)
@@ -368,7 +418,8 @@ def clean(file_name_in, file_name_out, parser, info, imgs):
         
     #closed all tags and file, now we delete the file_name_in, ie raws
     os.remove(file_name_in)
-
+    return chapter_title
+    
 def write_xhtml(file_name_out, chapter_title, chapter):
     '''write chapter to xhtml file'''
     with open(file_name_out, 'w', encoding='utf8') as xhtml:
@@ -585,7 +636,8 @@ def get_toc_rr(toc_html):
         #toc is now a list of a tags
         for a in toc:
             a['href'] = 'https://www.royalroad.com' + a['href']
-        return toc
+        titles = [a.text for a in toc]
+        return toc, titles
 
 def get_metadata_rr(toc_html):
     '''given the toc.html file, it returns a info dict on novel name, 
@@ -675,7 +727,7 @@ def get_metadata_ww(file_name_in):
     'raw_novel_name': raw_novel_name,
     }
     return info
-
+    
 def find_chapter_content_ww(file_name_in):
     '''given a raw wuxiaworld html chapter, returns list of its chapter
     content p tags and its title'''
@@ -703,13 +755,14 @@ def get_toc_wp(file_name_in):
     if share: #maybe wp authors won't make the post commentable
         share.decompose()
     chapters = chapters.findAll('a')
+    titles = [a.text for a in chapters]
     toc = []
     for c in chapters:
     #    if 'wordpress' in c['href']:
-        toc.append(c)
+        toc.append(c['href'])
     #won't work for wp sites that have bougth a custom domain
     #need to use either "wordpress" or the site name
-    return toc
+    return toc, titles
 
 def get_metadata_wp(file_name_in):
     with open(file_name_in, 'r', encoding='utf8') as raw:
@@ -746,11 +799,12 @@ def get_toc_bs(file_name_in):
         soup = BeautifulSoup(raw, 'html.parser')
     chapters = soup.find(class_="entry-content")
     chapters = chapters.findAll('a')
+    titles = [a.text for a in chapters]
     toc = []
     for c in chapters:
-        toc.append(c)
+        toc.append(c['href'])
 
-    return toc
+    return toc, titles
 
 def get_metadata_bs(file_name_in):
     with open(file_name_in, 'r', encoding='utf8') as raw:
@@ -779,6 +833,123 @@ def find_chapter_content_bs(file_name_in):
     
     return chapter, chapter_title
 
+
+#General parser
+def get_toc_gp(file_name_in):
+    '''given a toc_html, return a list of a tags (chapters), ie the toc'''
+    with open(file_name_in, 'r', encoding='utf8') as raw:
+        soup = BeautifulSoup(raw, 'html.parser')
+    toc = []
+    chapters = soup.body.find_all(['div', 'ul', 'ol'])
+    a_lists = []
+    for lst in chapters:
+        a_lists.append(lst.find_all('a', href=True))
+    a_lists.sort(key=len)
+
+    a_lists = a_lists[-1]
+
+    chapters = []
+
+    for a_tag in a_lists:
+        criteria = len(a_tag.attrs.values()) 
+        if criteria < 3:
+            chapters.append(a_tag)
+
+    titles = [a.text for a in chapters]
+    for c in chapters:
+        toc.append(c['href'])
+
+    return toc, titles
+
+def get_metadata_gp(file_name_in):
+    with open(file_name_in, 'r', encoding='utf8') as raw:
+        soup = BeautifulSoup(raw, 'html.parser')
+    title = soup.title.get_text(strip=True) 
+    #could make a better job at this, but whatever, it will do
+    info = {
+    'chapter_file_names': title,
+    'novel_name': title,
+    'author': '',
+    'raw_novel_name': '',
+    }
+    return info
+
+def find_chapter_content_gp(file_name_in):
+    with open(file_name_in, 'r', encoding='utf8') as raw:
+        soup = BeautifulSoup(raw, 'html.parser')
+    #1.get all tags
+    tags = soup.body.find_all()#contents #starting from body 
+    tags = [tag for tag in tags if isinstance(tag, bs4.element.Tag)]
+    #filter out all elements in tags list that isn't a tag, ie \n and strings
+
+    #2.find one with most text
+    #rather than p tags, maybe navstring would be better as it's safer
+    #not sure how to use it with find_all() though, maybe find_all(string=re...) 
+    #with re set to match anything? Will go for p tags for now to be safe it works first
+
+    #to include blogspot pages in which instead of p tags we have div, maybe make
+    #an if on the basis that if the tags_p overall text isn't greater than x words/characters
+    #it should redo the step with div tag?
+    #otherwise find another way to get a tag containing multiple with same structure tags
+    #containing text in their deepest child?
+    #or just make a specific parser for blogspot praying it's the only site to have
+    #such weird strutcture...
+
+    #make list of all tags' p tags -> tags_p = list of lists of p tags
+    tags_p = [tag.find_all('p', recursive=False) for tag in tags]
+            #need to limit the find_all() to only search for the direct children 
+            #as otherwise it will take the most outward tag containing the
+            #chapter content as long as it has even few additional p tags   
+    tags_p.sort(key=len)
+    #to see which tag has the highest amount of p tags, sort them by lentght
+    #of each item in ascending order (basically sorting len(item0), len(item1)...
+    #thus the last, [-1] will be the highest p tags containing tags
+    #(previously did this with max() and index(), but sorting is... more direct)
+
+    is_chapter = tags_p[-1] #list of p tags of tag with most of them
+    #to find the chapter tittle, search for a tag, p or h, which navstring has 
+    #a digit, prologue or epilogue or number in words and most importantly that is contained
+    #within the <title> tag
+    #start searching from first line of chapter content and earlier tags
+    #if nothing is found, just use the <title>'s navstring.
+    
+    #the case of comment being longer than the chapter itself should be 
+    #extremely rare, so instead of checking if the is_chapter has too 
+    #unwanted tags which isn't reliable enough since there might be 
+    #sites/translators who put ads or whatever in the chapter itself, 
+    #better to make more phases of which the first should be whether the 
+    #2nd tag with most p has at least x% of words of is_chapter, if that's 
+    #the case we can proceed to check for unwanted tags for both and with 
+    #some ratio choose which one is the real chapter. Criteria should be 
+    #very strict as I don't think there even will be cases of comment 
+    #lenght > chapter lenght
+    chapter = is_chapter
+    
+    title_tag = soup.title.text
+    chapter_title = title_tag
+
+    h_tags = soup.find_all(re.compile(r'h\d+')) 
+    #could be more efficient and limit the search range to before the chapter
+    #content with find_all_previous(), but for some reasons it won't work, 
+    #maybe I can't find if the depth level of the tags is different
+
+    for ht in h_tags:
+        htext = ht.text.replace('\xa0', ' ')
+        #happened that \xa0 screwed my search for the title in h tags
+        if htext in title_tag: 
+            chapter_title = htext.strip()
+
+    #should also search for the first string line of chapter content as 
+    #sometimes the chapter's title is like that
+
+    for line in chapter[0:10]:
+        if line.text != None:
+            line_ts = line.text.strip()
+            if line_ts != '' and line_ts in chapter_title:
+                chapter_title = line_ts
+    return chapter, chapter_title
+    
+    
 #MISCELLANEOUS    
 def check_error_yn(flag):
     '''check that the flag has y or n as answer and returns it'''
@@ -810,23 +981,14 @@ def check_error_number(chapter_start, chapter_end):
 
 def get_chapter_s_e(title_list):
     '''define and return starting chapter and ending chapter of epub'''
-    chapter_s = ''
-    for c in title_list[0]:
-        if c.isdigit():
-            chapter_s += c
-    if len(chapter_s) > 1:
-        if '1' in chapter_s:
-            chapter_s = '1'
-    if chapter_s == '':
-        chapter_s = '0'
+    p_s = '\d+|prologue|$' #pattern_s
+    #digit OR 'prologue' OR end string ie '', latter is not to get NONE
+    chapter_s = re.search(p_s, title_list[0], flags=re.IGNORECASE).group()
+    #re.search gets only first occurence and group() will return said occurence
+    #re.IGNORECASE makes search case insensitive
     chapter_s = chapter_s.strip()
-
-    chapter_e = ''
-    for c in title_list[-1]:
-        if c.isdigit():
-            chapter_e += c
-    if chapter_e == '':
-        chapter_e = title_list[-1]
+    p_e = '\d+|epilogue|end.* |$'
+    chapter_e = re.search(p_e, title_list[-1], flags=re.IGNORECASE).group()
     chapter_e = chapter_e.strip()
     return chapter_s, chapter_e
 
