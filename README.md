@@ -74,5 +74,31 @@ At this point the script will start scraping the web pages, saving each page in
 to an xhtml file locally (you might want to cleanup the current folder from
 these files) and afterwards composing the EPUB file
 
+```
+Chapter 1/n ("<page 1 title>") processed...
+.
+.
+.
+Chapter n/n ("<page n title>") processed...
+Creating Epub file (0/4)...
+Creating Epub file (1/4)...
+-mimetype created
+Creating Epub file (2/4)...
+-container.xml created
+-creating content.opf...
+Creating Epub file (3/4)...
+-content.opf created
+Creating Epub file (4/4)...
+toc.xhtml created
+Epub created
+Finished
+Time taken to finish: sss.mmm seconds (around mm.m minutes)
+```
+When done, you will be prompted with a question, where you can repeat the process for a new URL or quit.
+```
+Want to download another epub? y/n n
+Quitting program...
+```
+
 # Known issues
-* If the page has special characters in it's name (examples: `/` or `\`) the script currently breaks. [Issue #2](https://github.com/izanaginookami10/web_to_epub/issues/2)
+* If the page has special characters in it's name (examples: `\`,`/`,`:`,`*`,`?` ) the script currently breaks. [Issue #2](https://github.com/izanaginookami10/web_to_epub/issues/2)
