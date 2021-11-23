@@ -75,4 +75,4 @@ to an xhtml file locally (you might want to cleanup the current folder from
 these files) and afterwards composing the EPUB file
 
 # Known issues
-* If the page has special characters in it's name (examples: `/` or `'`) the script currently breaks. [Issue #2](https://github.com/izanaginookami10/web_to_epub/issues/2)
+* If the page has special characters in it's name (examples: `/` or `\`) the script currently breaks. [Issue #2](https://github.com/izanaginookami10/web_to_epub/issues/2)
